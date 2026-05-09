@@ -357,14 +357,33 @@ export function getPlayerAttendance(playerId: number, limit?: number) {
 }
 
 export function getPlayerAttendanceStats(playerId: number) {
-  return db()
+  // Count attended sessions from the log
+  const attended = db()
     .prepare(
-      `SELECT
-         COUNT(*) AS total,
-         SUM(CASE WHEN attended = 1 THEN 1 ELSE 0 END) AS attended
-       FROM attendance_log WHERE player_id = ?`
+      `SELECT COUNT(*) AS c FROM attendance_log WHERE player_id = ? AND attended = 1`
     )
-    .get(playerId) as { total: number; attended: number };
+    .get(playerId) as { c: number };
+
+  // Count all sessions since the player's first attendance record
+  // This includes sessions where the player has no record (absent, not in roster)
+  const firstDate = db()
+    .prepare(
+      `SELECT MIN(session_date) AS d FROM attendance_log WHERE player_id = ?`
+    )
+    .get(playerId) as { d: string | null };
+
+  let total = 0;
+  if (firstDate.d) {
+    const allSessions = db()
+      .prepare(
+        `SELECT COUNT(DISTINCT session_date) AS c
+         FROM attendance_log WHERE session_date >= ?`
+      )
+      .get(firstDate.d) as { c: number };
+    total = allSessions.c;
+  }
+
+  return { total, attended: attended.c };
 }
 
 /* ── Attendance recording ────────────────────────────── */
