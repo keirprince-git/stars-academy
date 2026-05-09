@@ -31,6 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <a href="/dashboard">Dashboard</a>
                 <a href="/players">Players</a>
                 <a href="/attendance">Attendance</a>
+                <a href="/bank">Bank</a>
                 <span className="text-dim" style={{ fontSize: "0.8rem" }}>
                   {auth.username} ({auth.role})
                 </span>

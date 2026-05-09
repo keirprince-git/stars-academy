@@ -61,3 +61,20 @@ export interface Session {
   token: string;
   expires_at: string;
 }
+
+export interface BankTransaction {
+  id: number;
+  trans_date: string;       // ISO date
+  value_date: string;       // ISO date
+  description: string;      // parsed transaction details
+  reference: string;
+  deposit: number;          // credit amount (0 if withdrawal)
+  withdrawal: number;       // debit amount (0 if deposit)
+  balance: number;
+  status: string;           // 'unallocated' | 'allocated' | 'ignored'
+  allocated_player_id: number | null;
+  allocated_purchase_id: number | null;
+  import_batch: string;     // groups rows from same PDF upload
+  notes: string | null;
+  created_at: string;
+}

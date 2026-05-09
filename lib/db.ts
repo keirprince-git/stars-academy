@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import crypto from "crypto";
 import path from "path";
-import type { Player, DashboardRow, User, Session } from "./types";
+import type { Player, DashboardRow, User, Session, BankTransaction } from "./types";
 
 /* ── Connection (singleton) ─────────────────────────── */
 
@@ -85,9 +85,29 @@ function ensureSchema(d: Database.Database) {
       created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS bank_transactions (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      trans_date            TEXT    NOT NULL,
+      value_date            TEXT    NOT NULL,
+      description           TEXT    NOT NULL,
+      reference             TEXT    NOT NULL DEFAULT '',
+      deposit               REAL    NOT NULL DEFAULT 0,
+      withdrawal            REAL    NOT NULL DEFAULT 0,
+      balance               REAL    NOT NULL DEFAULT 0,
+      status                TEXT    NOT NULL DEFAULT 'unallocated'
+                            CHECK (status IN ('unallocated','allocated','ignored')),
+      allocated_player_id   INTEGER REFERENCES players(id),
+      allocated_purchase_id INTEGER REFERENCES sessions_purchased(id),
+      import_batch          TEXT    NOT NULL,
+      notes                 TEXT,
+      created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_att_player   ON attendance_log(player_id);
     CREATE INDEX IF NOT EXISTS idx_att_date     ON attendance_log(session_date);
     CREATE INDEX IF NOT EXISTS idx_sp_player    ON sessions_purchased(player_id);
+    CREATE INDEX IF NOT EXISTS idx_bt_status    ON bank_transactions(status);
+    CREATE INDEX IF NOT EXISTS idx_bt_batch     ON bank_transactions(import_batch);
   `);
 }
 
@@ -382,4 +402,164 @@ export function getPlayerPurchases(playerId: number) {
     bank_ref: string | null;
     notes: string | null;
   }[];
+}
+
+/* ── Bank transaction queries ──────────────────────── */
+
+export function insertBankTransactions(
+  rows: Array<{
+    trans_date: string;
+    value_date: string;
+    description: string;
+    reference: string;
+    deposit: number;
+    withdrawal: number;
+    balance: number;
+  }>,
+  importBatch: string
+): number {
+  const insert = db().prepare(
+    `INSERT INTO bank_transactions
+       (trans_date, value_date, description, reference, deposit, withdrawal, balance, import_batch)
+     VALUES (@trans_date, @value_date, @description, @reference, @deposit, @withdrawal, @balance, @import_batch)`
+  );
+
+  const tx = db().transaction(() => {
+    for (const r of rows) {
+      insert.run({ ...r, import_batch: importBatch });
+    }
+  });
+
+  tx();
+  return rows.length;
+}
+
+export function getBankTransactions(opts?: {
+  status?: string;
+  search?: string;
+  batch?: string;
+}): BankTransaction[] {
+  const clauses: string[] = ["1=1"];
+  const params: Record<string, string> = {};
+
+  if (opts?.status && opts.status !== "all") {
+    clauses.push("bt.status = @status");
+    params.status = opts.status;
+  }
+  if (opts?.search) {
+    clauses.push("(bt.description LIKE @search OR bt.reference LIKE @search)");
+    params.search = `%${opts.search}%`;
+  }
+  if (opts?.batch) {
+    clauses.push("bt.import_batch = @batch");
+    params.batch = opts.batch;
+  }
+
+  return db()
+    .prepare(
+      `SELECT bt.*, p.name AS player_name, p.code AS player_code
+       FROM bank_transactions bt
+       LEFT JOIN players p ON p.id = bt.allocated_player_id
+       WHERE ${clauses.join(" AND ")}
+       ORDER BY bt.trans_date DESC, bt.id DESC`
+    )
+    .all(params) as (BankTransaction & { player_name?: string; player_code?: string })[];
+}
+
+export function getBankTransaction(id: number) {
+  return db()
+    .prepare(
+      `SELECT bt.*, p.name AS player_name, p.code AS player_code
+       FROM bank_transactions bt
+       LEFT JOIN players p ON p.id = bt.allocated_player_id
+       WHERE bt.id = ?`
+    )
+    .get(id) as (BankTransaction & { player_name?: string; player_code?: string }) | undefined;
+}
+
+export function allocateBankTransaction(
+  txnId: number,
+  playerId: number,
+  sessionsPurchased: number,
+  packageName: string | null,
+  notes: string | null
+) {
+  const txn = getBankTransaction(txnId);
+  if (!txn) throw new Error("Transaction not found");
+  if (txn.status === "allocated") throw new Error("Already allocated");
+
+  const d = db();
+  const tx = d.transaction(() => {
+    // Create the sessions_purchased record
+    const result = d
+      .prepare(
+        `INSERT INTO sessions_purchased
+           (player_id, purchase_date, type, amount_paid, sessions_purchased, package, bank_ref, notes)
+         VALUES (?, ?, 'Purchase', ?, ?, ?, ?, ?)`
+      )
+      .run(
+        playerId,
+        txn.trans_date,
+        txn.deposit,
+        sessionsPurchased,
+        packageName,
+        txn.reference,
+        notes
+      );
+
+    // Mark the bank transaction as allocated
+    d.prepare(
+      `UPDATE bank_transactions
+       SET status = 'allocated', allocated_player_id = ?, allocated_purchase_id = ?
+       WHERE id = ?`
+    ).run(playerId, result.lastInsertRowid, txnId);
+  });
+
+  tx();
+}
+
+export function ignoreBankTransaction(txnId: number, reason: string | null) {
+  db()
+    .prepare("UPDATE bank_transactions SET status = 'ignored', notes = ? WHERE id = ?")
+    .run(reason, txnId);
+}
+
+export function unallocateBankTransaction(txnId: number) {
+  const txn = getBankTransaction(txnId);
+  if (!txn) throw new Error("Transaction not found");
+
+  const d = db();
+  const tx = d.transaction(() => {
+    // Delete the linked sessions_purchased record if it exists
+    if (txn.allocated_purchase_id) {
+      d.prepare("DELETE FROM sessions_purchased WHERE id = ?").run(txn.allocated_purchase_id);
+    }
+    // Reset the bank transaction
+    d.prepare(
+      "UPDATE bank_transactions SET status = 'unallocated', allocated_player_id = NULL, allocated_purchase_id = NULL, notes = NULL WHERE id = ?"
+    ).run(txnId);
+  });
+
+  tx();
+}
+
+export function getBankTransactionSummary() {
+  const row = db()
+    .prepare(
+      `SELECT
+         COUNT(*) AS total,
+         COUNT(CASE WHEN status='unallocated' THEN 1 END) AS unallocated,
+         COUNT(CASE WHEN status='allocated' THEN 1 END) AS allocated,
+         COUNT(CASE WHEN status='ignored' THEN 1 END) AS ignored,
+         COALESCE(SUM(CASE WHEN status='unallocated' AND deposit > 0 THEN deposit END), 0) AS unallocated_amount
+       FROM bank_transactions`
+    )
+    .get() as {
+    total: number;
+    unallocated: number;
+    allocated: number;
+    ignored: number;
+    unallocated_amount: number;
+  };
+  return row;
 }
