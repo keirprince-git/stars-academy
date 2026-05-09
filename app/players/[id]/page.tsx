@@ -26,11 +26,14 @@ export default async function PlayerDetailPage({
   const balance       = totalPaid - totalAttended;
 
   /* ── Financial summary ────────────────────────────── */
-  const totalAmountPaid = purchases
-    .filter(p => p.type !== "Adjustment" && p.type !== "Opening balance")
-    .reduce((s, p) => s + p.amount_paid, 0);
-  const avgCostPerSession = totalPaid > 0 ? Math.round(totalAmountPaid / totalPaid) : 0;
-  const lastPaymentDate = purchases.length > 0 ? purchases[0].purchase_date : null;
+  const paidPurchases = purchases.filter(p => p.type === "Purchase");
+  const totalAmountPaid = paidPurchases.reduce((s, p) => s + p.amount_paid, 0);
+  const paidSessions = paidPurchases.reduce((s, p) => s + p.sessions_purchased, 0);
+  const freeSessions = purchases
+    .filter(p => p.type === "Adjustment" && p.amount_paid === 0 && p.sessions_purchased > 0)
+    .reduce((s, p) => s + p.sessions_purchased, 0);
+  const avgCostPerSession = paidSessions > 0 ? Math.round(totalAmountPaid / paidSessions) : 0;
+  const lastPaymentDate = paidPurchases.length > 0 ? paidPurchases[0].purchase_date : null;
 
   /* ── Attendance stats ─────────────────────────────── */
   const attendedCount = attendance.filter(a => a.attended === 1).length;
@@ -101,8 +104,14 @@ export default async function PlayerDetailPage({
         </div>
         <div className="chip">
           <span className="chip-value" style={{ fontSize: "1rem" }}>₦{avgCostPerSession.toLocaleString()}</span>
-          <span className="chip-label">Avg / Session</span>
+          <span className="chip-label">Avg / Paid Session</span>
         </div>
+        {freeSessions > 0 && (
+          <div className="chip">
+            <span className="chip-value">{freeSessions}</span>
+            <span className="chip-label">Free Sessions</span>
+          </div>
+        )}
         <div className="chip">
           <span className="chip-value">{lastPaymentDate ?? "—"}</span>
           <span className="chip-label">Last Payment</span>
