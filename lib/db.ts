@@ -32,6 +32,15 @@ export function hashPassword(password: string): string {
 /* ── Schema ─────────────────────────────────────────── */
 
 function ensureSchema(d: Database.Database) {
+  /* ── Migration: fix old bank_transactions missing allocated_amount ── */
+  try {
+    const cols = d.prepare("PRAGMA table_info(bank_transactions)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "allocated_amount")) {
+      d.exec("DROP TABLE IF EXISTS bank_allocations");
+      d.exec("DROP TABLE IF EXISTS bank_transactions");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
