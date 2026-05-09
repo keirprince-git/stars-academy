@@ -426,6 +426,31 @@ export function getPlayerPurchases(playerId: number) {
   }[];
 }
 
+export function getPlayerBankAllocations(playerId: number) {
+  return db()
+    .prepare(
+      `SELECT ba.id, ba.amount, ba.sessions_purchased, ba.package, ba.notes,
+              ba.created_at,
+              bt.id AS txn_id, bt.trans_date, bt.description, bt.reference
+       FROM bank_allocations ba
+       JOIN bank_transactions bt ON bt.id = ba.bank_transaction_id
+       WHERE ba.player_id = ?
+       ORDER BY bt.trans_date DESC`
+    )
+    .all(playerId) as {
+    id: number;
+    amount: number;
+    sessions_purchased: number;
+    package: string | null;
+    notes: string | null;
+    created_at: string;
+    txn_id: number;
+    trans_date: string;
+    description: string;
+    reference: string;
+  }[];
+}
+
 /* ── Bank transaction queries ──────────────────────── */
 
 export function insertBankTransactions(

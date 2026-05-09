@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
-import { getPlayer, getPlayerAttendance, getPlayerPurchases, updatePlayer } from "@/lib/db";
+import { getPlayer, getPlayerAttendance, getPlayerPurchases, getPlayerBankAllocations, updatePlayer } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 export default async function PlayerDetailPage({
@@ -18,10 +18,33 @@ export default async function PlayerDetailPage({
 
   const attendance = getPlayerAttendance(player.id);
   const purchases  = getPlayerPurchases(player.id);
+  const bankAllocs = getPlayerBankAllocations(player.id);
 
+  /* ── Session balance ──────────────────────────────── */
   const totalPaid     = purchases.reduce((s, p) => s + p.sessions_purchased, 0);
   const totalAttended = attendance.filter((a) => a.attended === 1).length;
   const balance       = totalPaid - totalAttended;
+
+  /* ── Financial summary ────────────────────────────── */
+  const totalAmountPaid = purchases
+    .filter(p => p.type !== "Adjustment" && p.type !== "Opening balance")
+    .reduce((s, p) => s + p.amount_paid, 0);
+  const avgCostPerSession = totalPaid > 0 ? Math.round(totalAmountPaid / totalPaid) : 0;
+  const lastPaymentDate = purchases.length > 0 ? purchases[0].purchase_date : null;
+
+  /* ── Attendance stats ─────────────────────────────── */
+  const attendedCount = attendance.filter(a => a.attended === 1).length;
+  const attendanceRate = attendance.length > 0
+    ? Math.round((attendedCount / attendance.length) * 100)
+    : 0;
+
+  // Last 10 sessions streak
+  const recent10 = attendance.slice(0, 10);
+  let currentStreak = 0;
+  for (const a of recent10) {
+    if (a.attended === 1) currentStreak++;
+    else break;
+  }
 
   const isAdmin = auth.role === "admin";
   const editing = sp.edit === "1" && isAdmin;
@@ -52,7 +75,7 @@ export default async function PlayerDetailPage({
         </div>
       </div>
 
-      {/* ── Balance summary ────────────────────── */}
+      {/* ── Session balance summary ───────────────── */}
       <div className="summary-row">
         <div className="chip">
           <span className="chip-value">{totalPaid}</span>
@@ -70,7 +93,33 @@ export default async function PlayerDetailPage({
         </div>
       </div>
 
-      {/* ── Player details (view or edit) ──────── */}
+      {/* ── Financial + Attendance stats ──────────── */}
+      <div className="summary-row" style={{ marginTop: "0.5rem" }}>
+        <div className="chip">
+          <span className="chip-value" style={{ fontSize: "1rem" }}>₦{totalAmountPaid.toLocaleString()}</span>
+          <span className="chip-label">Total Paid</span>
+        </div>
+        <div className="chip">
+          <span className="chip-value" style={{ fontSize: "1rem" }}>₦{avgCostPerSession.toLocaleString()}</span>
+          <span className="chip-label">Avg / Session</span>
+        </div>
+        <div className="chip">
+          <span className="chip-value">{lastPaymentDate ?? "—"}</span>
+          <span className="chip-label">Last Payment</span>
+        </div>
+        <div className="chip">
+          <span className="chip-value" style={{
+            color: attendanceRate >= 75 ? "var(--success)" : attendanceRate >= 50 ? "var(--warning)" : "var(--danger)"
+          }}>{attendanceRate}%</span>
+          <span className="chip-label">Attendance Rate</span>
+        </div>
+        <div className="chip">
+          <span className="chip-value">{currentStreak}/{recent10.length}</span>
+          <span className="chip-label">Recent Streak</span>
+        </div>
+      </div>
+
+      {/* ── Player details (view or edit) ──────────── */}
       <div className="card">
         <h2>Player Details</h2>
         {editing ? (
@@ -125,7 +174,52 @@ export default async function PlayerDetailPage({
         )}
       </div>
 
-      {/* ── Purchase history (accordion) ───────── */}
+      {/* ── Bank payment history ───────────────────── */}
+      {isAdmin && (
+        <details open={bankAllocs.length > 0 && bankAllocs.length <= 10}>
+          <summary>Bank Payments ({bankAllocs.length} entries)</summary>
+          <div className="detail-body">
+            {bankAllocs.length === 0 ? (
+              <p className="text-dim">No bank allocations linked to this player.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th className="text-right">Amount</th>
+                    <th className="text-right">Sessions</th>
+                    <th>Package</th>
+                    <th>Reference</th>
+                    <th>Notes</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bankAllocs.map((a) => (
+                    <tr key={a.id}>
+                      <td>{a.trans_date}</td>
+                      <td className="text-right" style={{ color: "#2f9e44", fontWeight: 500 }}>
+                        ₦{a.amount.toLocaleString()}
+                      </td>
+                      <td className="text-right">{a.sessions_purchased}</td>
+                      <td>{a.package ?? "—"}</td>
+                      <td style={{ maxWidth: "180px", overflow: "hidden", textOverflow: "ellipsis" }} title={a.reference}>
+                        {a.reference || "—"}
+                      </td>
+                      <td className="text-dim">{a.notes ?? ""}</td>
+                      <td>
+                        <a href={`/bank/${a.txn_id}/allocate`} className="btn btn-sm">View Txn</a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </details>
+      )}
+
+      {/* ── Purchase history (accordion) ───────────── */}
       <details open={purchases.length > 0 && purchases.length <= 10}>
         <summary>Purchase History ({purchases.length} entries)</summary>
         <div className="detail-body">
@@ -157,7 +251,7 @@ export default async function PlayerDetailPage({
         </div>
       </details>
 
-      {/* ── Attendance history (accordion) ──────── */}
+      {/* ── Attendance history (accordion) ──────────── */}
       <details>
         <summary>Recent Attendance ({attendance.length} sessions shown)</summary>
         <div className="detail-body">
