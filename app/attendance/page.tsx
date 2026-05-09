@@ -13,6 +13,27 @@ export default async function AttendancePage({
   const view = sp.view ?? "record"; // "record" | "history" | "session"
   const success = sp.success;
 
+  // Server action - declared at top level to avoid strict-mode block restriction
+  const handleRecord = async (formData: FormData) => {
+    "use server";
+    const sessionDate = formData.get("session_date") as string;
+    const sessionDay = formData.get("session_day") as string;
+
+    if (!sessionDate) {
+      redirect("/attendance?error=date_required");
+    }
+
+    const attendedIds: number[] = [];
+    for (const [key, value] of formData.entries()) {
+      if (key.startsWith("player_") && value === "on") {
+        attendedIds.push(parseInt(key.replace("player_", ""), 10));
+      }
+    }
+
+    recordAttendance(sessionDate, sessionDay, attendedIds);
+    redirect(`/attendance?success=1&recorded=${attendedIds.length}&date=${sessionDate}`);
+  };
+
   // ── Record view ─────────────────────────────────────
   if (view === "record") {
     const players = getActivePlayers();
@@ -30,26 +51,6 @@ export default async function AttendancePage({
       if (existing.length > 0) {
         preChecked = new Set(existing.filter(e => e.attended === 1).map(e => e.player_id));
       }
-    }
-
-    async function handleRecord(formData: FormData) {
-      "use server";
-      const sessionDate = formData.get("session_date") as string;
-      const sessionDay = formData.get("session_day") as string;
-
-      if (!sessionDate) {
-        redirect("/attendance?error=date_required");
-      }
-
-      const attendedIds: number[] = [];
-      for (const [key, value] of formData.entries()) {
-        if (key.startsWith("player_") && value === "on") {
-          attendedIds.push(parseInt(key.replace("player_", ""), 10));
-        }
-      }
-
-      recordAttendance(sessionDate, sessionDay, attendedIds);
-      redirect(`/attendance?success=1&recorded=${attendedIds.length}&date=${sessionDate}`);
     }
 
     return (
