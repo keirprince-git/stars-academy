@@ -71,10 +71,21 @@ export interface BankTransaction {
   deposit: number;          // credit amount (0 if withdrawal)
   withdrawal: number;       // debit amount (0 if deposit)
   balance: number;
-  status: string;           // 'unallocated' | 'allocated' | 'ignored'
-  allocated_player_id: number | null;
-  allocated_purchase_id: number | null;
+  status: string;           // 'unallocated' | 'partial' | 'allocated' | 'ignored'
+  allocated_amount: number; // sum of all allocations so far
   import_batch: string;     // groups rows from same PDF upload
+  notes: string | null;
+  created_at: string;
+}
+
+export interface BankAllocation {
+  id: number;
+  bank_transaction_id: number;
+  player_id: number;
+  amount: number;           // portion of the deposit allocated to this player
+  sessions_purchased: number;
+  package: string | null;
+  purchase_id: number | null; // linked sessions_purchased record
   notes: string | null;
   created_at: string;
 }

@@ -30,8 +30,14 @@ export async function GET(request: Request) {
   const insertTxn = d.prepare(
     `INSERT INTO bank_transactions
        (trans_date, value_date, description, reference, deposit, withdrawal, balance,
-        status, allocated_player_id, import_batch, notes)
+        status, allocated_amount, import_batch, notes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+
+  const insertAllocation = d.prepare(
+    `INSERT INTO bank_allocations
+       (bank_transaction_id, player_id, amount, sessions_purchased, package, notes)
+     VALUES (?, ?, ?, ?, ?, ?)`
   );
 
   const batch = "seed-from-spreadsheet";
@@ -41,18 +47,11 @@ export async function GET(request: Request) {
 
   const tx = d.transaction(() => {
     for (const t of BANK_TRANSACTIONS) {
-      let playerId: number | null = null;
-
-      // Resolve player code to ID
-      if (t.p && codeToId[t.p]) {
-        playerId = codeToId[t.p];
-      }
-
-      // If we have a valid player allocation, also find or skip the purchase link
-      // (We don't create new purchase records here — they already exist from the main seed)
+      const playerId = t.p && codeToId[t.p] ? codeToId[t.p] : null;
       const status = t.s;
+      const allocatedAmount = (status === "allocated" && playerId) ? t.dep : 0;
 
-      insertTxn.run(
+      const result = insertTxn.run(
         t.d,      // trans_date
         t.vd,     // value_date
         t.desc,   // description
@@ -61,10 +60,23 @@ export async function GET(request: Request) {
         t.wdl,    // withdrawal
         t.bal,    // balance
         status,   // status
-        playerId, // allocated_player_id
+        allocatedAmount, // allocated_amount
         batch,    // import_batch
         t.n || null, // notes
       );
+
+      // If allocated to a player, create an allocation record (but NOT a sessions_purchased
+      // record, since those already exist from the main seed)
+      if (status === "allocated" && playerId) {
+        insertAllocation.run(
+          result.lastInsertRowid, // bank_transaction_id
+          playerId,               // player_id
+          t.dep,                  // amount (full deposit for single-player allocations)
+          0,                      // sessions_purchased (0 = linked to existing purchase from main seed)
+          null,                   // package
+          "Seeded from spreadsheet", // notes
+        );
+      }
 
       if (status === "allocated") allocated++;
       else if (status === "ignored") ignored++;
