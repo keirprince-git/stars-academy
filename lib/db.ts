@@ -346,13 +346,25 @@ export function deleteExpiredSessions() {
 
 /* ── Player detail queries ──────────────────────────── */
 
-export function getPlayerAttendance(playerId: number) {
+export function getPlayerAttendance(playerId: number, limit?: number) {
+  const sql = limit
+    ? `SELECT session_date, attended FROM attendance_log
+       WHERE player_id = ? ORDER BY session_date DESC LIMIT ?`
+    : `SELECT session_date, attended FROM attendance_log
+       WHERE player_id = ? ORDER BY session_date DESC`;
+  const args: (number)[] = limit ? [playerId, limit] : [playerId];
+  return db().prepare(sql).all(...args) as { session_date: string; attended: number }[];
+}
+
+export function getPlayerAttendanceStats(playerId: number) {
   return db()
     .prepare(
-      `SELECT session_date, attended FROM attendance_log
-       WHERE player_id = ? ORDER BY session_date DESC LIMIT 50`
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN attended = 1 THEN 1 ELSE 0 END) AS attended
+       FROM attendance_log WHERE player_id = ?`
     )
-    .all(playerId) as { session_date: string; attended: number }[];
+    .get(playerId) as { total: number; attended: number };
 }
 
 /* ── Attendance recording ────────────────────────────── */

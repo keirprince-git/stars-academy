@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
-import { getPlayer, getPlayerAttendance, getPlayerPurchases, getPlayerBankAllocations, updatePlayer, addSessionAdjustment } from "@/lib/db";
+import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, updatePlayer, addSessionAdjustment } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 export default async function PlayerDetailPage({
@@ -16,13 +16,14 @@ export default async function PlayerDetailPage({
   const player = getPlayer(Number(id));
   if (!player) notFound();
 
-  const attendance = getPlayerAttendance(player.id);
+  const attStats   = getPlayerAttendanceStats(player.id);
+  const recentAtt  = getPlayerAttendance(player.id, 50);
   const purchases  = getPlayerPurchases(player.id);
   const bankAllocs = getPlayerBankAllocations(player.id);
 
   /* ── Session balance ──────────────────────────────── */
   const totalPaid     = purchases.reduce((s, p) => s + p.sessions_purchased, 0);
-  const totalAttended = attendance.filter((a) => a.attended === 1).length;
+  const totalAttended = attStats.attended;
   const balance       = totalPaid - totalAttended;
 
   /* ── Financial summary ────────────────────────────── */
@@ -36,13 +37,12 @@ export default async function PlayerDetailPage({
   const lastPaymentDate = paidPurchases.length > 0 ? paidPurchases[0].purchase_date : null;
 
   /* ── Attendance stats ─────────────────────────────── */
-  const attendedCount = attendance.filter(a => a.attended === 1).length;
-  const attendanceRate = attendance.length > 0
-    ? Math.round((attendedCount / attendance.length) * 100)
+  const attendanceRate = attStats.total > 0
+    ? Math.round((attStats.attended / attStats.total) * 100)
     : 0;
 
   // Last 10 sessions streak
-  const recent10 = attendance.slice(0, 10);
+  const recent10 = recentAtt.slice(0, 10);
   let currentStreak = 0;
   for (const a of recent10) {
     if (a.attended === 1) currentStreak++;
@@ -315,15 +315,15 @@ export default async function PlayerDetailPage({
 
       {/* ── Attendance history (accordion) ──────────── */}
       <details>
-        <summary>Recent Attendance ({attendance.length} sessions shown)</summary>
+        <summary>Recent Attendance (last {recentAtt.length} of {attStats.total} sessions)</summary>
         <div className="detail-body">
-          {attendance.length === 0 ? (
+          {recentAtt.length === 0 ? (
             <p className="text-dim">No attendance records.</p>
           ) : (
             <table>
               <thead><tr><th>Date</th><th>Attended</th></tr></thead>
               <tbody>
-                {attendance.map((a, i) => (
+                {recentAtt.map((a, i) => (
                   <tr key={i}>
                     <td>{a.session_date}</td>
                     <td>{a.attended ? "Yes" : "No"}</td>
