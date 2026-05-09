@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
-import { getPlayer, getPlayerAttendance, getPlayerPurchases, getPlayerBankAllocations, updatePlayer } from "@/lib/db";
+import { getPlayer, getPlayerAttendance, getPlayerPurchases, getPlayerBankAllocations, updatePlayer, addSessionAdjustment } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 export default async function PlayerDetailPage({
@@ -51,6 +51,21 @@ export default async function PlayerDetailPage({
 
   const isAdmin = auth.role === "admin";
   const editing = sp.edit === "1" && isAdmin;
+
+  async function handleAdjustment(formData: FormData) {
+    "use server";
+    const playerId = Number(formData.get("player_id"));
+    const sessions = parseInt(formData.get("sessions") as string, 10);
+    const type = formData.get("type") as string;
+    const notes = (formData.get("notes") as string) || null;
+
+    if (!playerId || isNaN(sessions) || sessions === 0) {
+      redirect(`/players/${playerId}?error=invalid`);
+    }
+
+    addSessionAdjustment(playerId, sessions, type, notes);
+    redirect(`/players/${playerId}?success=adjusted`);
+  }
 
   async function handleSave(formData: FormData) {
     "use server";
@@ -127,6 +142,44 @@ export default async function PlayerDetailPage({
           <span className="chip-label">Recent Streak</span>
         </div>
       </div>
+
+      {/* ── Messages ─────────────────────────────── */}
+      {sp.success === "adjusted" && (
+        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+          Session adjustment added.
+        </div>
+      )}
+      {sp.error === "invalid" && (
+        <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Please enter a valid number of sessions.</div>
+      )}
+
+      {/* ── Add credit / adjustment (admin only) ── */}
+      {isAdmin && !editing && (
+        <div className="card" style={{ marginBottom: "1rem" }}>
+          <h2 style={{ marginBottom: "0.5rem" }}>Add Session Credit</h2>
+          <form action={handleAdjustment}>
+            <input type="hidden" name="player_id" value={player.id} />
+            <div className="form-row" style={{ alignItems: "flex-end" }}>
+              <div className="form-group">
+                <label htmlFor="sessions">Sessions</label>
+                <input id="sessions" name="sessions" type="number" min="1" defaultValue="1" required style={{ maxWidth: "100px" }} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="type">Type</label>
+                <select id="type" name="type" style={{ maxWidth: "180px" }}>
+                  <option value="Adjustment">Free session</option>
+                  <option value="Transfer">Transfer from another player</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label htmlFor="adj_notes">Notes (optional)</label>
+                <input id="adj_notes" name="notes" type="text" placeholder="e.g. Birthday bonus" />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Add</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ── Player details (view or edit) ──────────── */}
       <div className="card">

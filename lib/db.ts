@@ -426,6 +426,22 @@ export function getPlayerPurchases(playerId: number) {
   }[];
 }
 
+export function addSessionAdjustment(
+  playerId: number,
+  sessions: number,
+  type: string,
+  notes: string | null,
+) {
+  const today = new Date().toISOString().slice(0, 10);
+  return db()
+    .prepare(
+      `INSERT INTO sessions_purchased
+         (player_id, purchase_date, type, amount_paid, sessions_purchased, package, notes)
+       VALUES (?, ?, ?, 0, ?, ?, ?)`
+    )
+    .run(playerId, today, type, sessions, type === "Adjustment" ? "Free session" : null, notes);
+}
+
 export function getPlayerBankAllocations(playerId: number) {
   return db()
     .prepare(
