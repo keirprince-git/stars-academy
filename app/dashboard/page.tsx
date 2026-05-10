@@ -72,26 +72,26 @@ export default async function DashboardPage({
 
       {/* ── Summary chips ──────────────────────────── */}
       <div className="summary-row">
-        <div className="chip">
+        <a href="/dashboard" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value">{summary.total}</span>
           <span className="chip-label">Players</span>
-        </div>
-        <div className="chip">
+        </a>
+        <a href="/dashboard?status=Active" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value">{summary.active}</span>
           <span className="chip-label">Active</span>
-        </div>
-        <div className="chip">
+        </a>
+        <a href="/dashboard?status=Active&payStatus=OVERDUE" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value" style={{ color: "var(--danger)" }}>{summary.overdue}</span>
           <span className="chip-label">Overdue</span>
-        </div>
-        <div className="chip">
+        </a>
+        <a href="/dashboard?status=Active&payStatus=Credit" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value" style={{ color: "var(--success)" }}>{summary.credit}</span>
           <span className="chip-label">Credit</span>
-        </div>
-        <div className="chip">
+        </a>
+        <a href="/dashboard?payStatus=Scholarship" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value" style={{ color: "#6f42c1" }}>{summary.scholarship}</span>
           <span className="chip-label">Scholarship</span>
-        </div>
+        </a>
       </div>
 
       {/* ── Filters ────────────────────────────────── */}
