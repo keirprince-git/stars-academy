@@ -79,12 +79,14 @@ export default async function PlayerDetailPage({
     "use server";
     const playerId = Number(formData.get("player_id"));
     updatePlayer(playerId, {
-      name:        formData.get("name") as string,
-      country:     (formData.get("country") as string) || null,
-      source:      (formData.get("source") as string) || null,
-      play_status: formData.get("play_status") as string,
-      scholarship: formData.get("scholarship") === "1" ? 1 : 0,
-      notes:       (formData.get("notes") as string) || null,
+      name:         formData.get("name") as string,
+      country:      (formData.get("country") as string) || null,
+      source:       (formData.get("source") as string) || null,
+      play_status:  formData.get("play_status") as string,
+      scholarship:  formData.get("scholarship") === "1" ? 1 : 0,
+      parent_name:  (formData.get("parent_name") as string) || null,
+      parent_phone: (formData.get("parent_phone") as string) || null,
+      notes:        (formData.get("notes") as string) || null,
     });
     redirect(`/players/${playerId}`);
   }
@@ -165,58 +167,6 @@ export default async function PlayerDetailPage({
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Invalid transfer — check both players and session count.</div>
       )}
 
-      {/* ── Admin actions (admin only) ────────────── */}
-      {isAdmin && !editing && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
-          {/* Free sessions */}
-          <div className="card">
-            <h2 style={{ marginBottom: "0.5rem" }}>Give Free Sessions</h2>
-            <form action={handleFreeCredit}>
-              <input type="hidden" name="player_id" value={player.id} />
-              <div className="form-row" style={{ alignItems: "flex-end" }}>
-                <div className="form-group">
-                  <label htmlFor="free_sessions">Sessions</label>
-                  <input id="free_sessions" name="sessions" type="number" min="1" defaultValue="1" required style={{ maxWidth: "80px" }} />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label htmlFor="free_notes">Notes</label>
-                  <input id="free_notes" name="notes" type="text" placeholder="e.g. Birthday bonus" />
-                </div>
-                <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Add</button>
-              </div>
-            </form>
-          </div>
-
-          {/* Transfer */}
-          <div className="card">
-            <h2 style={{ marginBottom: "0.5rem" }}>Transfer Sessions In</h2>
-            <form action={handleTransfer}>
-              <input type="hidden" name="player_id" value={player.id} />
-              <div className="form-row" style={{ alignItems: "flex-end" }}>
-                <div className="form-group">
-                  <label htmlFor="from_player_id">From</label>
-                  <select id="from_player_id" name="from_player_id" required style={{ maxWidth: "200px" }}>
-                    <option value="">— Select —</option>
-                    {allPlayers.filter(p => p.id !== player.id).map(p => (
-                      <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="xfer_sessions">Sessions</label>
-                  <input id="xfer_sessions" name="sessions" type="number" min="1" defaultValue="1" required style={{ maxWidth: "80px" }} />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label htmlFor="xfer_notes">Notes</label>
-                  <input id="xfer_notes" name="notes" type="text" placeholder="e.g. Sibling share" />
-                </div>
-                <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Transfer</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* ── Player details (view or edit) ──────────── */}
       <div className="card">
         <h2>Player Details</h2>
@@ -249,6 +199,14 @@ export default async function PlayerDetailPage({
                   <option value="1">Yes</option>
                 </select>
               </div>
+              <div className="form-group">
+                <label>Parent / Guardian</label>
+                <input name="parent_name" type="text" defaultValue={player.parent_name ?? ""} placeholder="Name" />
+              </div>
+              <div className="form-group">
+                <label>WhatsApp Number</label>
+                <input name="parent_phone" type="tel" defaultValue={player.parent_phone ?? ""} placeholder="e.g. +234..." />
+              </div>
             </div>
             <div className="form-row full">
               <div className="form-group">
@@ -267,6 +225,15 @@ export default async function PlayerDetailPage({
             <dt className="text-dim">Age Group</dt>   <dd>{player.source ?? "—"}</dd>
             <dt className="text-dim">Play Status</dt> <dd>{player.play_status}</dd>
             <dt className="text-dim">Scholarship</dt> <dd>{player.scholarship ? "Yes" : "No"}</dd>
+            <dt className="text-dim">Parent</dt>      <dd>{player.parent_name ?? "—"}</dd>
+            <dt className="text-dim">WhatsApp</dt>
+            <dd>
+              {player.parent_phone ? (
+                <a href={`https://wa.me/${player.parent_phone.replace(/[^0-9]/g, "")}`} target="_blank" rel="noopener">
+                  {player.parent_phone}
+                </a>
+              ) : "—"}
+            </dd>
             <dt className="text-dim">Notes</dt>       <dd>{player.notes ?? "—"}</dd>
           </dl>
         )}
@@ -345,6 +312,32 @@ export default async function PlayerDetailPage({
                 ))}
               </tbody>
             </table>
+          )}
+
+          {/* ── Inline admin actions ─────────────────── */}
+          {isAdmin && !editing && (
+            <div style={{ borderTop: "1px solid var(--border)", marginTop: "0.75rem", paddingTop: "0.75rem", display: "flex", gap: "1.5rem", flexWrap: "wrap", fontSize: "0.85rem" }}>
+              <form action={handleFreeCredit} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <input type="hidden" name="player_id" value={player.id} />
+                <span className="text-dim">Free:</span>
+                <input name="sessions" type="number" min="1" defaultValue="1" required style={{ width: "50px" }} />
+                <input name="notes" type="text" placeholder="Notes" style={{ width: "120px" }} />
+                <button type="submit" className="btn btn-sm">Add</button>
+              </form>
+              <form action={handleTransfer} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <input type="hidden" name="player_id" value={player.id} />
+                <span className="text-dim">Transfer from:</span>
+                <select name="from_player_id" required style={{ maxWidth: "160px", fontSize: "0.85rem" }}>
+                  <option value="">— Select —</option>
+                  {allPlayers.filter(p => p.id !== player.id).map(p => (
+                    <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+                  ))}
+                </select>
+                <input name="sessions" type="number" min="1" defaultValue="1" required style={{ width: "50px" }} />
+                <input name="notes" type="text" placeholder="Notes" style={{ width: "120px" }} />
+                <button type="submit" className="btn btn-sm">Transfer</button>
+              </form>
+            </div>
           )}
         </div>
       </details>

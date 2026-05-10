@@ -8,6 +8,8 @@ export interface Player {
   source: string | null;
   play_status: string;     // Active / Inactive / Left
   scholarship: number;     // 0 or 1
+  parent_name: string | null;
+  parent_phone: string | null;  // WhatsApp number
   notes: string | null;
   created_at: string;
   updated_at: string;

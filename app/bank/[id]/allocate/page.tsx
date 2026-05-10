@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { getBankTransaction, getBankAllocations, getPlayers, addBankAllocation, removeBankAllocation } from "@/lib/db";
+import { TARIFF } from "@/lib/tariff";
 import { redirect } from "next/navigation";
 
 export default async function AllocatePage({
@@ -26,6 +27,12 @@ export default async function AllocatePage({
   const allocations = getBankAllocations(txnId);
   const players = getPlayers({ status: "Active", sort: "name", dir: "asc" });
   const remaining = Math.round((txn.deposit - txn.allocated_amount) * 100) / 100;
+
+  // Build player age-group lookup for client-side script
+  const playerGroups: Record<number, string> = {};
+  for (const p of players) {
+    playerGroups[p.id] = p.source === "Lower" ? "Lower" : "Upper";
+  }
 
   /* ── Server actions ──────────────────────────────────── */
 
@@ -158,20 +165,28 @@ export default async function AllocatePage({
           <h2 style={{ marginBottom: "0.75rem" }}>
             {allocations.length > 0 ? "Add Another Player" : "Assign to Player"}
           </h2>
-          <form action={handleAllocate}>
+          <form action={handleAllocate} id="allocForm">
             <div className="form-group">
               <label htmlFor="player_id">Player</label>
               <select id="player_id" name="player_id" required style={{ maxWidth: "400px" }}>
                 <option value="">— Select a player —</option>
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.code} — {p.name}
+                    {p.code} — {p.name} ({p.source ?? "—"})
                   </option>
                 ))}
               </select>
+              <span id="playerGroup" className="text-dim" style={{ marginLeft: "0.5rem", fontSize: "0.85rem" }}></span>
             </div>
 
             <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="package">Package</label>
+                <select id="package" name="package" style={{ maxWidth: "280px" }}>
+                  <option value="">— Select package —</option>
+                  <option value="Custom">Custom amount</option>
+                </select>
+              </div>
               <div className="form-group">
                 <label htmlFor="amount">Amount (₦)</label>
                 <input
@@ -198,18 +213,9 @@ export default async function AllocatePage({
                   style={{ maxWidth: "120px" }}
                 />
               </div>
-              <div className="form-group">
-                <label htmlFor="package">Package</label>
-                <select id="package" name="package" style={{ maxWidth: "200px" }}>
-                  <option value="">— None —</option>
-                  <option value="8 sessions">8 sessions</option>
-                  <option value="12 sessions">12 sessions</option>
-                  <option value="24 sessions">24 sessions</option>
-                  <option value="Term">Term</option>
-                  <option value="Custom">Custom</option>
-                </select>
-              </div>
             </div>
+
+            <div id="tariffHint" style={{ fontSize: "0.8rem", color: "#6c757d", marginBottom: "0.5rem", display: "none" }}></div>
 
             <div className="form-group">
               <label htmlFor="notes">Notes (optional)</label>
@@ -240,6 +246,87 @@ export default async function AllocatePage({
           </div>
         </div>
       )}
+
+      {/* ── Client-side tariff logic ────────────────────── */}
+      <script dangerouslySetInnerHTML={{ __html: `
+        (function() {
+          var tariff = ${JSON.stringify(TARIFF)};
+          var groups = ${JSON.stringify(playerGroups)};
+          var remaining = ${remaining};
+
+          var playerSel = document.getElementById('player_id');
+          var pkgSel = document.getElementById('package');
+          var amountEl = document.getElementById('amount');
+          var sessionsEl = document.getElementById('sessions_purchased');
+          var groupLabel = document.getElementById('playerGroup');
+          var hintEl = document.getElementById('tariffHint');
+
+          function getGroup() {
+            var pid = parseInt(playerSel.value);
+            return groups[pid] || 'Upper';
+          }
+
+          function rebuildPackages() {
+            var g = getGroup();
+            // Keep first two options (select + custom)
+            while (pkgSel.options.length > 2) pkgSel.remove(2);
+            tariff.forEach(function(t) {
+              var price = t.price[g];
+              var opt = document.createElement('option');
+              opt.value = t.label;
+              opt.textContent = t.label + ' — ₦' + price.toLocaleString();
+              if (price > remaining) {
+                opt.disabled = true;
+                opt.textContent += ' (exceeds remaining)';
+              }
+              pkgSel.appendChild(opt);
+            });
+            // Show age group label
+            if (playerSel.value) {
+              groupLabel.textContent = g + ' group';
+            } else {
+              groupLabel.textContent = '';
+            }
+          }
+
+          function onPackageChange() {
+            var g = getGroup();
+            var selected = pkgSel.value;
+            if (!selected || selected === 'Custom') {
+              amountEl.readOnly = false;
+              sessionsEl.readOnly = false;
+              hintEl.style.display = 'none';
+              return;
+            }
+            var match = tariff.find(function(t) { return t.label === selected; });
+            if (match) {
+              var price = match.price[g];
+              amountEl.value = price;
+              sessionsEl.value = match.sessions;
+              amountEl.readOnly = true;
+              sessionsEl.readOnly = true;
+              hintEl.textContent = '₦' + Math.round(price / match.sessions).toLocaleString() + ' per session (' + g + ' rate)';
+              hintEl.style.display = 'block';
+            }
+          }
+
+          playerSel.addEventListener('change', function() {
+            rebuildPackages();
+            // Reset package selection
+            pkgSel.value = '';
+            amountEl.value = remaining;
+            amountEl.readOnly = false;
+            sessionsEl.value = '';
+            sessionsEl.readOnly = false;
+            hintEl.style.display = 'none';
+          });
+
+          pkgSel.addEventListener('change', onPackageChange);
+
+          // Init
+          rebuildPackages();
+        })();
+      `}} />
     </>
   );
 }

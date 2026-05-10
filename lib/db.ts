@@ -41,6 +41,15 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: add parent fields to players ── */
+  try {
+    const cols = d.prepare("PRAGMA table_info(players)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "parent_name")) {
+      d.exec("ALTER TABLE players ADD COLUMN parent_name TEXT");
+      d.exec("ALTER TABLE players ADD COLUMN parent_phone TEXT");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,17 +68,19 @@ function ensureSchema(d: Database.Database) {
     );
 
     CREATE TABLE IF NOT EXISTS players (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      code        TEXT    NOT NULL UNIQUE,
-      name        TEXT    NOT NULL,
-      country     TEXT,
-      source      TEXT,
-      play_status TEXT    NOT NULL DEFAULT 'Active'
-                  CHECK (play_status IN ('Active','Inactive','Left')),
-      scholarship INTEGER NOT NULL DEFAULT 0,
-      notes       TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      code         TEXT    NOT NULL UNIQUE,
+      name         TEXT    NOT NULL,
+      country      TEXT,
+      source       TEXT,
+      play_status  TEXT    NOT NULL DEFAULT 'Active'
+                   CHECK (play_status IN ('Active','Inactive','Left')),
+      scholarship  INTEGER NOT NULL DEFAULT 0,
+      parent_name  TEXT,
+      parent_phone TEXT,
+      notes        TEXT,
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS attendance_log (
@@ -187,7 +198,7 @@ export function getPlayer(id: number): Player | undefined {
 
 export function updatePlayer(
   id: number,
-  data: Partial<Pick<Player, "name" | "country" | "source" | "play_status" | "scholarship" | "notes">>
+  data: Partial<Pick<Player, "name" | "country" | "source" | "play_status" | "scholarship" | "parent_name" | "parent_phone" | "notes">>
 ) {
   const sets: string[] = [];
   const params: Record<string, unknown> = { id };
