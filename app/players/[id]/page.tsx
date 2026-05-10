@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions } from "@/lib/db";
 import { redirect } from "next/navigation";
+import { buildChaseMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 
 export default async function PlayerDetailPage({
   params,
@@ -119,6 +120,24 @@ export default async function PlayerDetailPage({
           }}>{balance}</span>
           <span className="chip-label">Balance</span>
         </div>
+        {isAdmin && balance <= 2 && player.parent_phone && (
+          <a
+            href={buildWhatsAppLink(
+              player.parent_phone,
+              buildChaseMessage({
+                playerName: player.name,
+                balance,
+                parentName: player.parent_name,
+              })
+            )}
+            target="_blank"
+            rel="noopener"
+            className="btn btn-sm"
+            style={{ alignSelf: "center", whiteSpace: "nowrap" }}
+          >
+            Chase Payment
+          </a>
+        )}
       </div>
 
       {/* ── Financial + Attendance stats ──────────── */}
