@@ -2,7 +2,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; }
 
 :root {
-  --bg:           #fbf2e3;  /* very pale warm cream — picks up brand orange */
+  --bg:           #fff8f1;  /* same pale peach as the table row-hover tint */
   --surface:      #ffffff;
   --surface-2:    #f7f8f9;
   --border:       #e5e8eb;
