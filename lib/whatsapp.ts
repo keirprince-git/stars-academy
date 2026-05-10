@@ -1,6 +1,7 @@
 /* ── WhatsApp message templates for Stars Academy ──── */
 
 import { getAllSettings } from "./db";
+import { getCurrentTariff, type TariffPackage } from "./tariff";
 
 export interface ChaseMessageParams {
   playerName: string;
@@ -43,6 +44,49 @@ export function buildChaseMessage({ playerName, balance, parentName }: ChaseMess
   message = message.replace(/\{\{parent\}\}/g, parentFirst);
 
   return message;
+}
+
+/**
+ * Generate a tariff info message for a player's parent.
+ * Shows the current pricing for the player's age group.
+ */
+export function buildTariffMessage({
+  playerName,
+  parentName,
+  ageGroup,
+}: {
+  playerName: string;
+  parentName?: string | null;
+  ageGroup: string | null;
+}): string {
+  const settings = getAllSettings();
+  const tariff = getCurrentTariff();
+  const group = ageGroup === "Lower" ? "Lower" : "Upper";
+  const parentFirst = parentName ? parentName.split(/\s+/)[0] : "there";
+
+  const lines: string[] = [];
+  lines.push(`Hi ${parentFirst},`);
+  lines.push("");
+  lines.push(`Here are the current session prices for ${playerName} at Stars Football Academy:`);
+  lines.push("");
+
+  for (const pkg of tariff) {
+    const price = pkg.price[group];
+    const perSession = Math.round(price / pkg.sessions);
+    lines.push(`• ${pkg.label}: ₦${price.toLocaleString()} (₦${perSession.toLocaleString()}/session)`);
+  }
+
+  lines.push("");
+  lines.push("Payments can be made to:");
+  lines.push(`Account Name: ${settings.bank_name || ""}`);
+  lines.push(`Bank: ${settings.bank_bank || ""}`);
+  lines.push(`Account Number: ${settings.bank_account || ""}`);
+  lines.push("");
+  lines.push(`Please send confirmation of payment to Coach Sunny on ${settings.coach_phone || ""}.`);
+  lines.push("");
+  lines.push("Thank you!");
+
+  return lines.join("\n");
 }
 
 /**

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions } from "@/lib/db";
 import { redirect } from "next/navigation";
-import { buildChaseMessage, buildWhatsAppLink } from "@/lib/whatsapp";
+import { buildChaseMessage, buildTariffMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 
 export default async function PlayerDetailPage({
   params,
@@ -120,6 +120,24 @@ export default async function PlayerDetailPage({
           }}>{balance}</span>
           <span className="chip-label">Balance</span>
         </div>
+        {isAdmin && player.parent_phone && (
+          <a
+            href={buildWhatsAppLink(
+              player.parent_phone,
+              buildTariffMessage({
+                playerName: player.name,
+                parentName: player.parent_name,
+                ageGroup: player.source ?? null,
+              })
+            )}
+            target="_blank"
+            rel="noopener"
+            className="btn btn-sm"
+            style={{ alignSelf: "center", whiteSpace: "nowrap" }}
+          >
+            Send Tariff
+          </a>
+        )}
         {isAdmin && balance <= 2 && player.parent_phone && (
           <a
             href={buildWhatsAppLink(
