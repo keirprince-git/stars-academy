@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { getBankTransaction, getBankAllocations, getPlayers, addBankAllocation, removeBankAllocation } from "@/lib/db";
 import { TARIFF } from "@/lib/tariff";
+import { guessPlayers } from "@/lib/match-player";
 import { redirect } from "next/navigation";
 
 export default async function AllocatePage({
@@ -27,6 +28,12 @@ export default async function AllocatePage({
   const allocations = getBankAllocations(txnId);
   const players = getPlayers({ status: "Active", sort: "name", dir: "asc" });
   const remaining = Math.round((txn.deposit - txn.allocated_amount) * 100) / 100;
+
+  // Guess which player(s) this transaction relates to
+  const guessedIds = txn.deposit > 0
+    ? guessPlayers(txn.description, txn.reference, players)
+    : [];
+  const bestGuess = guessedIds.length > 0 ? guessedIds[0] : null;
 
   // Build player age-group lookup for client-side script
   const playerGroups: Record<number, string> = {};
@@ -168,15 +175,20 @@ export default async function AllocatePage({
           <form action={handleAllocate} id="allocForm">
             <div className="form-group">
               <label htmlFor="player_id">Player</label>
-              <select id="player_id" name="player_id" required style={{ maxWidth: "400px" }}>
+              <select id="player_id" name="player_id" required style={{ maxWidth: "400px" }} defaultValue={bestGuess ?? ""}>
                 <option value="">— Select a player —</option>
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.code} — {p.name} ({p.source ?? "—"})
+                    {guessedIds.includes(p.id) ? "★ " : ""}{p.code} — {p.name} ({p.source ?? "—"})
                   </option>
                 ))}
               </select>
               <span id="playerGroup" className="text-dim" style={{ marginLeft: "0.5rem", fontSize: "0.85rem" }}></span>
+              {guessedIds.length > 0 && (
+                <div style={{ fontSize: "0.8rem", color: "#6c757d", marginTop: "0.25rem" }}>
+                  ★ Suggested based on transaction description
+                </div>
+              )}
             </div>
 
             <div className="form-row">
@@ -323,8 +335,12 @@ export default async function AllocatePage({
 
           pkgSel.addEventListener('change', onPackageChange);
 
-          // Init
+          // Init — rebuild packages (and trigger if player pre-selected)
           rebuildPackages();
+          if (playerSel.value) {
+            // Player was pre-selected by server guess — show group label
+            groupLabel.textContent = getGroup() + ' group';
+          }
         })();
       `}} />
     </>
