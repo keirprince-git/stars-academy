@@ -26,7 +26,7 @@ export function buildChaseMessage({ playerName, balance, parentName }: ChaseMess
   const settings = getAllSettings();
 
   const balanceLine = balance < 0
-    ? `${playerName} has used ${Math.abs(balance)} session${Math.abs(balance) !== 1 ? "s" : ""} beyond their paid balance and currently owes for those sessions.`
+    ? `${playerName} has used ${Math.abs(balance)} session${Math.abs(balance) !== 1 ? "s" : ""} beyond their paid balance.`
     : balance === 0
     ? `${playerName}'s session balance has reached zero.`
     : `${playerName} has ${balance} session${balance !== 1 ? "s" : ""} remaining.`;
