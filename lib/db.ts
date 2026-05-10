@@ -52,6 +52,17 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: add categorised_at / categorised_by to bank_transactions ── */
+  try {
+    const cols = d.prepare("PRAGMA table_info(bank_transactions)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "categorised_at")) {
+      d.exec("ALTER TABLE bank_transactions ADD COLUMN categorised_at TEXT");
+    }
+    if (cols.length > 0 && !cols.some(c => c.name === "categorised_by")) {
+      d.exec("ALTER TABLE bank_transactions ADD COLUMN categorised_by INTEGER REFERENCES users(id)");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   /* ── Migration: add parent fields to players ── */
   try {
     const cols = d.prepare("PRAGMA table_info(players)").all() as Array<{ name: string }>;
@@ -146,6 +157,15 @@ function ensureSchema(d: Database.Database) {
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS bank_transaction_splits (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      txn_id      INTEGER NOT NULL REFERENCES bank_transactions(id) ON DELETE CASCADE,
+      category    TEXT    NOT NULL,
+      amount      REAL    NOT NULL CHECK (amount > 0),
+      notes       TEXT,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS tariff_packages (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       effective_from TEXT    NOT NULL,
@@ -177,7 +197,45 @@ function ensureSchema(d: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_bt_batch     ON bank_transactions(import_batch);
     CREATE INDEX IF NOT EXISTS idx_ba_txn       ON bank_allocations(bank_transaction_id);
     CREATE INDEX IF NOT EXISTS idx_ba_player    ON bank_allocations(player_id);
+    CREATE INDEX IF NOT EXISTS idx_splits_txn   ON bank_transaction_splits(txn_id);
   `);
+
+  /* ── Data migration: backfill splits from legacy single-category field ─
+     For every transaction with a non-null category and no existing splits,
+     create a single split row equal to its deposit (income) or withdrawal
+     (expense). This preserves the I&E figures exactly and lets the user
+     re-open any historic transaction and break it apart later. */
+  try {
+    const legacy = d.prepare(`
+      SELECT bt.id, bt.deposit, bt.withdrawal, bt.category
+      FROM bank_transactions bt
+      LEFT JOIN bank_transaction_splits s ON s.txn_id = bt.id
+      WHERE bt.category IS NOT NULL AND s.id IS NULL
+      GROUP BY bt.id
+    `).all() as Array<{ id: number; deposit: number; withdrawal: number; category: string }>;
+
+    if (legacy.length > 0) {
+      const insertSplit = d.prepare(
+        "INSERT INTO bank_transaction_splits (txn_id, category, amount) VALUES (?, ?, ?)"
+      );
+      const stamp = d.prepare(
+        "UPDATE bank_transactions SET categorised_at = datetime('now') WHERE id = ?"
+      );
+      const tx = d.transaction((rows: typeof legacy) => {
+        for (const r of rows) {
+          const amount = r.deposit > 0 ? r.deposit : r.withdrawal;
+          if (amount > 0) {
+            insertSplit.run(r.id, r.category, amount);
+            stamp.run(r.id);
+          }
+        }
+      });
+      tx(legacy);
+      console.log(`[stars-academy] Backfilled ${legacy.length} expense splits from legacy categories`);
+    }
+  } catch (e) {
+    console.warn("[stars-academy] Split backfill skipped:", e);
+  }
 }
 
 /* ── Seed default users if table is empty ───────────── */
@@ -1104,6 +1162,96 @@ export function setCategoryForTransaction(txnId: number, category: string | null
     .run(category, txnId);
 }
 
+/* ── Transaction splits (multi-category breakdown) ─── */
+
+export interface TransactionSplit {
+  id: number;
+  txn_id: number;
+  category: string;
+  amount: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface TransactionSplitInput {
+  category: string;
+  amount: number;
+  notes?: string | null;
+}
+
+export function getTransactionSplits(txnId: number): TransactionSplit[] {
+  return db()
+    .prepare("SELECT * FROM bank_transaction_splits WHERE txn_id = ? ORDER BY id")
+    .all(txnId) as TransactionSplit[];
+}
+
+/** Bulk-fetch splits for a list of transaction IDs. Returns a map. */
+export function getSplitsByTxnIds(txnIds: number[]): Record<number, TransactionSplit[]> {
+  if (txnIds.length === 0) return {};
+  const placeholders = txnIds.map(() => "?").join(",");
+  const rows = db()
+    .prepare(`SELECT * FROM bank_transaction_splits WHERE txn_id IN (${placeholders}) ORDER BY id`)
+    .all(...txnIds) as TransactionSplit[];
+  const out: Record<number, TransactionSplit[]> = {};
+  for (const r of rows) {
+    if (!out[r.txn_id]) out[r.txn_id] = [];
+    out[r.txn_id].push(r);
+  }
+  return out;
+}
+
+export function getCategorisedStamp(txnId: number): { categorised_at: string | null; username: string | null } {
+  const row = db()
+    .prepare(
+      `SELECT bt.categorised_at, u.username
+       FROM bank_transactions bt
+       LEFT JOIN users u ON u.id = bt.categorised_by
+       WHERE bt.id = ?`
+    )
+    .get(txnId) as { categorised_at: string | null; username: string | null } | undefined;
+  return row ?? { categorised_at: null, username: null };
+}
+
+/**
+ * Replace all splits for a transaction with the given list. Atomic.
+ * Sets categorised_at and categorised_by stamps. Also writes the first
+ * split's category back to bank_transactions.category to keep the legacy
+ * column readable (though all I&E reads from the splits table now).
+ */
+export function setTransactionSplits(
+  txnId: number,
+  splits: TransactionSplitInput[],
+  userId: number,
+) {
+  const d = db();
+  const insertSplit = d.prepare(
+    "INSERT INTO bank_transaction_splits (txn_id, category, amount, notes) VALUES (?, ?, ?, ?)"
+  );
+  const deleteSplits = d.prepare("DELETE FROM bank_transaction_splits WHERE txn_id = ?");
+  const stamp = d.prepare(
+    "UPDATE bank_transactions SET categorised_at = datetime('now'), categorised_by = ?, category = ? WHERE id = ?"
+  );
+
+  const tx = d.transaction((items: TransactionSplitInput[]) => {
+    deleteSplits.run(txnId);
+    for (const s of items) {
+      insertSplit.run(txnId, s.category, s.amount, s.notes ?? null);
+    }
+    const primary = items.length > 0 ? items[0].category : null;
+    stamp.run(userId, primary, txnId);
+  });
+  tx(splits);
+}
+
+export function clearTransactionSplits(txnId: number, userId: number) {
+  const d = db();
+  d.prepare("DELETE FROM bank_transaction_splits WHERE txn_id = ?").run(txnId);
+  d.prepare(
+    "UPDATE bank_transactions SET categorised_at = NULL, categorised_by = NULL, category = NULL WHERE id = ?"
+  ).run(txnId);
+  void userId; // future: log who cleared
+}
+
 /* ── Accounts / Income & Expenditure ───────────────── */
 
 export interface AccountLine {
@@ -1114,73 +1262,81 @@ export interface AccountLine {
 
 export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
   const d = db();
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
+  const dateConditions: string[] = [];
+  const dateParams: (string | number)[] = [];
 
   if (opts?.from) {
-    conditions.push("trans_date >= ?");
-    params.push(opts.from);
+    dateConditions.push("bt.trans_date >= ?");
+    dateParams.push(opts.from);
   }
   if (opts?.to) {
-    conditions.push("trans_date <= ?");
-    params.push(opts.to);
+    dateConditions.push("bt.trans_date <= ?");
+    dateParams.push(opts.to);
   }
 
-  const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+  const dateWhere = dateConditions.length > 0 ? " AND " + dateConditions.join(" AND ") : "";
 
-  // Session fees: sum of allocated amounts (these are player fee income)
+  // Session fees: sum of allocated amounts (player fee income, unchanged)
+  const sessionFeesWhere = opts?.from || opts?.to
+    ? "WHERE allocated_amount > 0" + (opts?.from ? " AND trans_date >= ?" : "") + (opts?.to ? " AND trans_date <= ?" : "")
+    : "WHERE allocated_amount > 0";
+  const sessionFeesParams: (string | number)[] = [];
+  if (opts?.from) sessionFeesParams.push(opts.from);
+  if (opts?.to) sessionFeesParams.push(opts.to);
+
   const sessionFees = d
     .prepare(
       `SELECT COALESCE(SUM(allocated_amount), 0) AS total, COUNT(*) AS count
-       FROM bank_transactions ${where ? where + " AND" : "WHERE"} allocated_amount > 0`
+       FROM bank_transactions ${sessionFeesWhere}`
     )
-    .get(...params) as { total: number; count: number };
+    .get(...sessionFeesParams) as { total: number; count: number };
 
-  // Categorised transactions (deposits = income, withdrawals = expense)
-  const categorised = d
+  // Aggregated splits joined with the parent transaction (for date filtering
+  // and to know whether the parent is a deposit or withdrawal). One split row
+  // contributes to either income or expense based on the parent's direction.
+  const splitRows = d
     .prepare(
-      `SELECT category,
-              COALESCE(SUM(deposit), 0) AS total_deposit,
-              COALESCE(SUM(withdrawal), 0) AS total_withdrawal,
-              COUNT(*) AS count
-       FROM bank_transactions
-       ${where ? where + (conditions.length > 0 ? " AND" : "") : "WHERE"} category IS NOT NULL
-       GROUP BY category`
+      `SELECT
+         s.category,
+         bt.deposit > 0 AS is_income,
+         SUM(s.amount) AS total,
+         COUNT(*) AS count
+       FROM bank_transaction_splits s
+       JOIN bank_transactions bt ON bt.id = s.txn_id
+       WHERE 1=1 ${dateWhere}
+       GROUP BY s.category, is_income`
     )
-    .all(...params) as Array<{
+    .all(...dateParams) as Array<{
     category: string;
-    total_deposit: number;
-    total_withdrawal: number;
+    is_income: number;
+    total: number;
     count: number;
   }>;
 
-  // Uncategorised ignored transactions
+  // Uncategorised ignored transactions (no splits at all)
   const uncategorised = d
     .prepare(
       `SELECT COALESCE(SUM(deposit), 0) AS total_deposit,
               COALESCE(SUM(withdrawal), 0) AS total_withdrawal,
               COUNT(*) AS count
-       FROM bank_transactions
-       ${where ? where + " AND" : "WHERE"} status = 'ignored' AND category IS NULL`
+       FROM bank_transactions bt
+       WHERE bt.status = 'ignored'
+         AND NOT EXISTS (SELECT 1 FROM bank_transaction_splits s WHERE s.txn_id = bt.id)
+         ${dateWhere}`
     )
-    .get(...params) as { total_deposit: number; total_withdrawal: number; count: number };
+    .get(...dateParams) as { total_deposit: number; total_withdrawal: number; count: number };
 
-  // Build income lines
+  // Build income & expense lines
   const income: AccountLine[] = [];
   if (sessionFees.total > 0) {
     income.push({ category: "session_fees", total: sessionFees.total, count: sessionFees.count });
   }
-  for (const row of categorised) {
-    if (row.total_deposit > 0) {
-      income.push({ category: row.category, total: row.total_deposit, count: row.count });
-    }
-  }
-
-  // Build expense lines
   const expenses: AccountLine[] = [];
-  for (const row of categorised) {
-    if (row.total_withdrawal > 0) {
-      expenses.push({ category: row.category, total: row.total_withdrawal, count: row.count });
+  for (const row of splitRows) {
+    if (row.is_income) {
+      income.push({ category: row.category, total: row.total, count: row.count });
+    } else {
+      expenses.push({ category: row.category, total: row.total, count: row.count });
     }
   }
 

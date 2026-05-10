@@ -6,9 +6,10 @@ import {
   ignoreBankTransaction,
   restoreBankTransaction,
   getBankAllocations,
-  setCategoryForTransaction,
+  getSplitsByTxnIds,
+  type TransactionSplit,
 } from "@/lib/db";
-import { getAllCategories } from "@/lib/categories";
+import { getCategoryLabel } from "@/lib/categories";
 import { parseBankStatementText } from "@/lib/parse-bank-pdf";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
@@ -88,17 +89,8 @@ export default async function BankPage({
     redirect("/bank?success=restored");
   };
 
-  const handleCategorise = async (formData: FormData) => {
-    "use server";
-    const txnId = parseInt(formData.get("txn_id") as string, 10);
-    const category = (formData.get("category") as string) || null;
-    setCategoryForTransaction(txnId, category);
-    redirect("/bank?success=categorised");
-  };
-
   /* ── Data ────────────────────────────────────────────── */
 
-  const categories = getAllCategories();
   const summary = getBankTransactionSummary();
   const transactions = getBankTransactions({
     status: statusFilter,
@@ -112,6 +104,9 @@ export default async function BankPage({
       allocsByTxn[t.id] = getBankAllocations(t.id);
     }
   }
+
+  // Pre-load splits for all visible transactions in one query
+  const splitsByTxn: Record<number, TransactionSplit[]> = getSplitsByTxnIds(transactions.map(t => t.id));
 
   /* ── Render ──────────────────────────────────────────── */
 
@@ -277,7 +272,7 @@ export default async function BankPage({
                     </span>
                   </td>
                   <td style={{ fontSize: "0.85rem" }}>
-                    {allocs.length > 0 ? (
+                    {allocs.length > 0 && (
                       <div>
                         {allocs.map((a, i) => (
                           <div key={i}>
@@ -286,18 +281,16 @@ export default async function BankPage({
                           </div>
                         ))}
                       </div>
-                    ) : null}
-                    {t.status === "ignored" && (
-                      <form action={handleCategorise} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <input type="hidden" name="txn_id" value={t.id} />
-                        <select name="category" defaultValue={t.category ?? ""} style={{ fontSize: "0.8rem", padding: "2px 4px", maxWidth: "140px" }}>
-                          <option value="">— Category —</option>
-                          {categories.map(c => (
-                            <option key={c.value} value={c.value}>{c.label}</option>
-                          ))}
-                        </select>
-                        <button type="submit" className="btn btn-sm" style={{ padding: "2px 6px", fontSize: "0.75rem" }}>Set</button>
-                      </form>
+                    )}
+                    {(splitsByTxn[t.id] ?? []).length > 0 && (
+                      <div>
+                        {splitsByTxn[t.id].map((s, i) => (
+                          <div key={i}>
+                            <span>{getCategoryLabel(s.category)}</span>
+                            <span className="text-dim"> — ₦{s.amount.toLocaleString()}{s.notes ? ` · ${s.notes}` : ""}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
@@ -320,12 +313,17 @@ export default async function BankPage({
                       </a>
                     )}
                     {t.status === "ignored" && (
-                      <form action={handleRestore} style={{ display: "inline" }}>
-                        <input type="hidden" name="txn_id" value={t.id} />
-                        <button type="submit" className="btn btn-sm" style={{ marginLeft: "4px" }}>
-                          Restore
-                        </button>
-                      </form>
+                      <>
+                        <a href={`/bank/${t.id}/categorise`} className={`btn btn-sm ${(splitsByTxn[t.id] ?? []).length === 0 ? "btn-primary" : ""}`} style={{ marginLeft: "4px" }}>
+                          {(splitsByTxn[t.id] ?? []).length === 0 ? "Categorise" : "Edit splits"}
+                        </a>
+                        <form action={handleRestore} style={{ display: "inline" }}>
+                          <input type="hidden" name="txn_id" value={t.id} />
+                          <button type="submit" className="btn btn-sm" style={{ marginLeft: "4px" }}>
+                            Restore
+                          </button>
+                        </form>
+                      </>
                     )}
                   </td>
                 </tr>
