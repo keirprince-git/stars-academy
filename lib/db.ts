@@ -19,6 +19,7 @@ export function db(): Database.Database {
     seedDefaultUsers(_db);
     seedDefaultCategories(_db);
     seedDefaultSettings(_db);
+    seedDefaultTariffs(_db);
   }
   return _db;
 }
@@ -145,6 +146,17 @@ function ensureSchema(d: Database.Database) {
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS tariff_packages (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      effective_from TEXT    NOT NULL,
+      label          TEXT    NOT NULL,
+      sessions       INTEGER NOT NULL,
+      price_upper    REAL    NOT NULL,
+      price_lower    REAL    NOT NULL,
+      sort_order     INTEGER NOT NULL DEFAULT 0,
+      created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -252,6 +264,124 @@ export function deleteCategory(id: number) {
     db().prepare("UPDATE bank_transactions SET category = NULL WHERE category = ?").run(cat.value);
   }
   db().prepare("DELETE FROM categories WHERE id = ?").run(id);
+}
+
+/* ── Tariff management ────────────────────────────── */
+
+const DEFAULT_TARIFFS = [
+  { label: "One session",     sessions: 1,  price_upper: 12000, price_lower: 12000, sort: 1 },
+  { label: "Four sessions",   sessions: 4,  price_upper: 35000, price_lower: 30000, sort: 2 },
+  { label: "Eight sessions",  sessions: 8,  price_upper: 50000, price_lower: 45000, sort: 3 },
+  { label: "Twelve sessions", sessions: 12, price_upper: 60000, price_lower: 60000, sort: 4 },
+];
+
+function seedDefaultTariffs(d: Database.Database) {
+  const count = d.prepare("SELECT COUNT(*) as c FROM tariff_packages").get() as { c: number };
+  if (count.c > 0) return;
+
+  const insert = d.prepare(
+    `INSERT INTO tariff_packages (effective_from, label, sessions, price_upper, price_lower, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  for (const t of DEFAULT_TARIFFS) {
+    insert.run("2026-01-01", t.label, t.sessions, t.price_upper, t.price_lower, t.sort);
+  }
+  console.log("[stars-academy] Seeded default tariff packages (effective 2026-01-01)");
+}
+
+export interface TariffRow {
+  id: number;
+  effective_from: string;
+  label: string;
+  sessions: number;
+  price_upper: number;
+  price_lower: number;
+  sort_order: number;
+}
+
+/** Get all distinct effective dates (most recent first) */
+export function getTariffDates(): string[] {
+  return (db()
+    .prepare("SELECT DISTINCT effective_from FROM tariff_packages ORDER BY effective_from DESC")
+    .all() as Array<{ effective_from: string }>)
+    .map(r => r.effective_from);
+}
+
+/** Get packages for a specific effective date */
+export function getTariffPackages(effectiveFrom: string): TariffRow[] {
+  return db()
+    .prepare("SELECT * FROM tariff_packages WHERE effective_from = ? ORDER BY sort_order")
+    .all(effectiveFrom) as TariffRow[];
+}
+
+/** Get the current tariff (most recent effective_from <= today) */
+export function getCurrentTariffDate(): string | null {
+  const row = db()
+    .prepare(
+      `SELECT effective_from FROM tariff_packages
+       WHERE effective_from <= date('now')
+       ORDER BY effective_from DESC LIMIT 1`
+    )
+    .get() as { effective_from: string } | undefined;
+  return row?.effective_from ?? null;
+}
+
+/** Get all tariff packages (all dates, for admin view) */
+export function getAllTariffPackages(): TariffRow[] {
+  return db()
+    .prepare("SELECT * FROM tariff_packages ORDER BY effective_from DESC, sort_order")
+    .all() as TariffRow[];
+}
+
+export function addTariffPackage(
+  effectiveFrom: string,
+  label: string,
+  sessions: number,
+  priceUpper: number,
+  priceLower: number,
+) {
+  const maxSort = db()
+    .prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM tariff_packages WHERE effective_from = ?")
+    .get(effectiveFrom) as { next: number };
+  db()
+    .prepare(
+      `INSERT INTO tariff_packages (effective_from, label, sessions, price_upper, price_lower, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(effectiveFrom, label, sessions, priceUpper, priceLower, maxSort.next);
+}
+
+export function updateTariffPackage(
+  id: number,
+  label: string,
+  sessions: number,
+  priceUpper: number,
+  priceLower: number,
+) {
+  db()
+    .prepare(
+      `UPDATE tariff_packages SET label = ?, sessions = ?, price_upper = ?, price_lower = ? WHERE id = ?`
+    )
+    .run(label, sessions, priceUpper, priceLower, id);
+}
+
+export function deleteTariffPackage(id: number) {
+  db().prepare("DELETE FROM tariff_packages WHERE id = ?").run(id);
+}
+
+/** Copy an entire tariff set to a new effective date */
+export function copyTariffSet(fromDate: string, toDate: string) {
+  const existing = getTariffPackages(fromDate);
+  const insert = db().prepare(
+    `INSERT INTO tariff_packages (effective_from, label, sessions, price_upper, price_lower, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  );
+  const tx = db().transaction(() => {
+    for (const pkg of existing) {
+      insert.run(toDate, pkg.label, pkg.sessions, pkg.price_upper, pkg.price_lower, pkg.sort_order);
+    }
+  });
+  tx();
 }
 
 /* ── Settings ──────────────────────────────────────── */

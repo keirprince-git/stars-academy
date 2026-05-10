@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { getBankTransaction, getBankAllocations, getPlayers, addBankAllocation, removeBankAllocation } from "@/lib/db";
-import { TARIFF } from "@/lib/tariff";
+import { getCurrentTariff } from "@/lib/tariff";
 import { guessPlayers } from "@/lib/match-player";
 import { redirect } from "next/navigation";
 
@@ -262,7 +262,7 @@ export default async function AllocatePage({
       {/* ── Client-side tariff logic ────────────────────── */}
       <script dangerouslySetInnerHTML={{ __html: `
         (function() {
-          var tariff = ${JSON.stringify(TARIFF)};
+          var tariff = ${JSON.stringify(getCurrentTariff())};
           var groups = ${JSON.stringify(playerGroups)};
           var remaining = ${remaining};
 

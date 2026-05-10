@@ -1,4 +1,6 @@
-/* ── Stars Academy session pricing (from 2026) ──────── */
+/* ── Stars Academy session pricing (DB-backed) ──────── */
+
+import { getCurrentTariffDate, getTariffPackages, type TariffRow } from "./db";
 
 export interface TariffPackage {
   label: string;
@@ -6,12 +8,32 @@ export interface TariffPackage {
   price: { Upper: number; Lower: number };
 }
 
-export const TARIFF: TariffPackage[] = [
-  { label: "One session",     sessions: 1,  price: { Upper: 12000, Lower: 12000 } },
-  { label: "Four sessions",   sessions: 4,  price: { Upper: 35000, Lower: 30000 } },
-  { label: "Eight sessions",  sessions: 8,  price: { Upper: 50000, Lower: 45000 } },
-  { label: "Twelve sessions", sessions: 12, price: { Upper: 60000, Lower: 60000 } },
-];
+/**
+ * Get the current tariff packages (most recent effective_from <= today).
+ * Returns the same TariffPackage[] shape the allocate page expects.
+ */
+export function getCurrentTariff(): TariffPackage[] {
+  const date = getCurrentTariffDate();
+  if (!date) return [];
+  const rows = getTariffPackages(date);
+  return rows.map(rowToPackage);
+}
+
+/** For backward compat — the allocate page imports this */
+export const TARIFF: TariffPackage[] = [];
+
+// Lazy-load: TARIFF is populated on first access via a Proxy-like pattern
+// But since the allocate page reads it at render time, we use a getter instead.
+// The allocate page will be updated to call getCurrentTariff() directly.
+
+/** Convert a DB row to the TariffPackage shape */
+function rowToPackage(row: TariffRow): TariffPackage {
+  return {
+    label: row.label,
+    sessions: row.sessions,
+    price: { Upper: row.price_upper, Lower: row.price_lower },
+  };
+}
 
 /** Look up the best matching package for a given amount and age group */
 export function matchPackage(
@@ -19,7 +41,8 @@ export function matchPackage(
   ageGroup: string | null,
 ): TariffPackage | null {
   const group = ageGroup === "Lower" ? "Lower" : "Upper";
-  return TARIFF.find(t => t.price[group] === amount) ?? null;
+  const tariff = getCurrentTariff();
+  return tariff.find(t => t.price[group] === amount) ?? null;
 }
 
 /** Get the price for a package given an age group */
