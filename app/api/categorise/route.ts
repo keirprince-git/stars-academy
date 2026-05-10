@@ -29,6 +29,13 @@ const RULES: Rule[] = [
   { pattern: /IFOSUNDAYOSILAMA/i,        category: "drawings", withdrawalOnly: true },
   { pattern: /TRFIFOSUNDAY/i,            category: "drawings", withdrawalOnly: true },
   { pattern: /TRF\s*IFO\s*SUND/i,        category: "drawings", withdrawalOnly: true },
+  { pattern: /IFO\s*Sunday\s*Osilama/i,  category: "drawings", withdrawalOnly: true },
+
+  // Kit sales — withdrawals to Sunny for kit purchases
+  { pattern: /SEARCHTHE\s*S/i,           category: "setup_costs", withdrawalOnly: true },
+
+  // Insurance
+  { pattern: /insurance/i,               category: "insurance" },
 ];
 
 export async function GET(request: Request) {
