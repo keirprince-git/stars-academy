@@ -160,6 +160,14 @@ export default async function BankPage({
             <span className="chip-label">Unallocated deposits</span>
           </div>
         )}
+        {summary.latest_balance !== null && (
+          <div className="chip">
+            <span className="chip-value" style={{ fontSize: "1rem" }}>
+              ₦{summary.latest_balance.toLocaleString()}
+            </span>
+            <span className="chip-label">Bank balance ({summary.latest_date})</span>
+          </div>
+        )}
       </div>
 
       {/* Upload */}

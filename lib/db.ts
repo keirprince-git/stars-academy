@@ -748,5 +748,18 @@ export function getBankTransactionSummary() {
     ignored: number;
     unallocated_amount: number;
   };
-  return row;
+
+  // Latest balance from the most recent transaction
+  const latest = db()
+    .prepare(
+      `SELECT balance, trans_date FROM bank_transactions
+       ORDER BY trans_date DESC, id DESC LIMIT 1`
+    )
+    .get() as { balance: number; trans_date: string } | undefined;
+
+  return {
+    ...row,
+    latest_balance: latest?.balance ?? null,
+    latest_date: latest?.trans_date ?? null,
+  };
 }
