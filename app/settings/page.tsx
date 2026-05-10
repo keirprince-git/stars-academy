@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { getAllSettings, setSetting } from "@/lib/db";
+import { buildChaseMessage } from "@/lib/whatsapp";
 import { redirect } from "next/navigation";
 
 export default async function SettingsPage({
@@ -27,15 +28,12 @@ export default async function SettingsPage({
     redirect("/settings?success=saved");
   };
 
-  // Build a preview of the template with example values
-  let preview = settings.chase_template || "";
-  preview = preview.replace(/\{\{player\}\}/g, "Amjad");
-  preview = preview.replace(/\{\{balance_line\}\}/g, "Amjad has used 5 sessions beyond their paid balance and currently owes for those sessions.");
-  preview = preview.replace(/\{\{bank_name\}\}/g, settings.bank_name || "");
-  preview = preview.replace(/\{\{bank_bank\}\}/g, settings.bank_bank || "");
-  preview = preview.replace(/\{\{bank_account\}\}/g, settings.bank_account || "");
-  preview = preview.replace(/\{\{coach_phone\}\}/g, settings.coach_phone || "");
-  preview = preview.replace(/\{\{parent\}\}/g, "Mohammed");
+  // Build a preview using the actual buildChaseMessage function
+  const preview = buildChaseMessage({
+    playerName: "Amjad",
+    balance: -5,
+    parentName: "Mohammed Al-Rashid",
+  });
 
   return (
     <>
