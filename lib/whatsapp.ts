@@ -98,7 +98,7 @@ export function buildGroupTariffMessage(): string {
   const tariff = getCurrentTariff();
 
   const lines: string[] = [];
-  lines.push("Dear Parents,");
+  lines.push("Dear Parents and Guardians,");
   lines.push("");
   lines.push("Here are the current session prices at Stars Football Academy:");
   lines.push("");
@@ -151,7 +151,15 @@ export function buildCancellationMessage({
   const lines: string[] = [];
   lines.push("Dear Parents and Guardians,");
   lines.push("");
-  lines.push(`Please note that the training session on *${date}* has been cancelled due to ${reason}.`);
+  // Format date nicely: "Saturday 10th May"
+  const d = new Date(date + "T00:00:00");
+  const dayName = d.toLocaleDateString("en-GB", { weekday: "long" });
+  const dayNum = d.getDate();
+  const suffix = [11,12,13].includes(dayNum) ? "th" : dayNum % 10 === 1 ? "st" : dayNum % 10 === 2 ? "nd" : dayNum % 10 === 3 ? "rd" : "th";
+  const month = d.toLocaleDateString("en-GB", { month: "long" });
+  const friendlyDate = `${dayName} ${dayNum}${suffix} ${month}`;
+
+  lines.push(`Please note that the training session on *${friendlyDate}* has been cancelled due to ${reason}.`);
   lines.push("");
   lines.push("Thank you for your understanding.");
 
