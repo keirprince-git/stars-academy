@@ -90,6 +90,75 @@ export function buildTariffMessage({
 }
 
 /**
+ * Generate a tariff announcement for a WhatsApp group.
+ * Shows both Upper and Lower pricing for all packages.
+ */
+export function buildGroupTariffMessage(): string {
+  const settings = getAllSettings();
+  const tariff = getCurrentTariff();
+
+  const lines: string[] = [];
+  lines.push("Dear Parents,");
+  lines.push("");
+  lines.push("Here are the current session prices at Stars Football Academy:");
+  lines.push("");
+
+  // Check if Upper and Lower prices differ for any package
+  const hasDifferentPricing = tariff.some(pkg => pkg.price.Upper !== pkg.price.Lower);
+
+  if (hasDifferentPricing) {
+    lines.push("*Upper Group:*");
+    for (const pkg of tariff) {
+      const perSession = Math.round(pkg.price.Upper / pkg.sessions);
+      lines.push(`• ${pkg.label}: ₦${pkg.price.Upper.toLocaleString()} (₦${perSession.toLocaleString()}/session)`);
+    }
+    lines.push("");
+    lines.push("*Lower Group:*");
+    for (const pkg of tariff) {
+      const perSession = Math.round(pkg.price.Lower / pkg.sessions);
+      lines.push(`• ${pkg.label}: ₦${pkg.price.Lower.toLocaleString()} (₦${perSession.toLocaleString()}/session)`);
+    }
+  } else {
+    for (const pkg of tariff) {
+      const perSession = Math.round(pkg.price.Upper / pkg.sessions);
+      lines.push(`• ${pkg.label}: ₦${pkg.price.Upper.toLocaleString()} (₦${perSession.toLocaleString()}/session)`);
+    }
+  }
+
+  lines.push("");
+  lines.push("Payments can be made to:");
+  lines.push(`Account Name: ${settings.bank_name || ""}`);
+  lines.push(`Bank: ${settings.bank_bank || ""}`);
+  lines.push(`Account Number: ${settings.bank_account || ""}`);
+  lines.push("");
+  lines.push(`Please send confirmation of payment to Coach Sunny on ${settings.coach_phone || ""}.`);
+  lines.push("");
+  lines.push("Thank you!");
+
+  return lines.join("\n");
+}
+
+/**
+ * Generate a session cancellation message for a WhatsApp group.
+ */
+export function buildCancellationMessage({
+  date,
+  reason,
+}: {
+  date: string;
+  reason: string;
+}): string {
+  const lines: string[] = [];
+  lines.push("Dear Parents,");
+  lines.push("");
+  lines.push(`Please note that the training session on *${date}* has been cancelled due to ${reason}.`);
+  lines.push("");
+  lines.push("We will notify you when sessions resume. Thank you for your understanding.");
+
+  return lines.join("\n");
+}
+
+/**
  * Build a wa.me URL with pre-populated message.
  * phone should be in international format (e.g. +2348070777069)
  * or local format (e.g. 08070777069) — we strip non-digits.
