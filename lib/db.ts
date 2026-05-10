@@ -639,6 +639,52 @@ export function deleteExpiredSessions() {
   db().prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }
 
+/* ── User management ────────────────────────────────── */
+
+export function getAllUsers(): Array<{ id: number; username: string; role: 'admin' | 'recorder'; created_at: string }> {
+  return db()
+    .prepare("SELECT id, username, role, created_at FROM users ORDER BY username")
+    .all() as Array<{ id: number; username: string; role: 'admin' | 'recorder'; created_at: string }>;
+}
+
+export function getUserById(id: number): User | undefined {
+  return db().prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;
+}
+
+export function countAdmins(): number {
+  return (db().prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").get() as { c: number }).c;
+}
+
+export function addUser(username: string, password: string, role: 'admin' | 'recorder'): number {
+  const result = db()
+    .prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)")
+    .run(username, hashPassword(password), role);
+  return Number(result.lastInsertRowid);
+}
+
+export function updateUser(id: number, username: string, role: 'admin' | 'recorder') {
+  db().prepare("UPDATE users SET username = ?, role = ? WHERE id = ?").run(username, role, id);
+}
+
+/**
+ * Reset a user's password. Invalidates all sessions for that user, except the
+ * one identified by keepToken (used when a user changes their own password
+ * and we want to keep them logged in on the current device).
+ */
+export function setUserPassword(userId: number, password: string, keepToken: string | null = null) {
+  db().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), userId);
+  if (keepToken) {
+    db().prepare("DELETE FROM sessions WHERE user_id = ? AND token != ?").run(userId, keepToken);
+  } else {
+    db().prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+  }
+}
+
+export function deleteUser(id: number) {
+  db().prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  db().prepare("DELETE FROM users WHERE id = ?").run(id);
+}
+
 /* ── Player detail queries ──────────────────────────── */
 
 export function getPlayerAttendance(playerId: number, limit?: number) {

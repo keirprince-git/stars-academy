@@ -39,7 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 {auth.role === "admin" && <NavLink href="/messages" label="Messages" />}
                 {auth.role === "admin" && <NavLink href="/accounts" label="Accounts" />}
                 {auth.role === "admin" && <NavLink href="/settings" label="Settings" />}
-                <span className="who">{auth.username}</span>
+                <a href="/account" className="who" title="Account settings">{auth.username}</a>
                 <LogoutButton />
               </nav>
             </header>
