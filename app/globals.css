@@ -53,7 +53,8 @@ h2 {
   border-radius: 4px; display: block;
 }
 .topbar h1 {
-  font-size: 1rem; font-weight: 600; letter-spacing: 0.01em;
+  font-size: 1rem; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: white; margin: 0;
   border-left: 0; padding-left: 0;
 }
@@ -125,6 +126,11 @@ thead th a:hover { color: var(--text); text-decoration: none; }
 tbody td { padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border-soft); }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--primary-tint); }
+
+/* Table-row links default to body text, only colour orange on hover.
+   Stops the global a{} rule from making every linked cell orange. */
+tbody td a { color: var(--text); text-decoration: none; font-weight: 600; }
+tbody td a:hover { color: var(--primary); text-decoration: none; }
 
 /* Tabular numbers for right-aligned cells (typically numeric columns) */
 td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
