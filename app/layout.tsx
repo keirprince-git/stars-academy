@@ -12,7 +12,7 @@ async function LogoutButton() {
   }
   return (
     <form action={handleLogout}>
-      <button type="submit" className="btn btn-sm">Sign out</button>
+      <button type="submit">Sign out</button>
     </form>
   );
 }
@@ -26,7 +26,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <div className="shell">
           {auth && (
             <header className="topbar">
-              <h1>Stars Football Academy</h1>
+              <div className="brand">
+                <img src="/Logo.JPG" alt="Stars Academy" />
+                <h1>Stars Football Academy</h1>
+              </div>
               <nav>
                 <a href="/dashboard">Dashboard</a>
                 <a href="/players">Players</a>
@@ -35,9 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 {auth.role === "admin" && <a href="/messages">Messages</a>}
                 {auth.role === "admin" && <a href="/accounts">Accounts</a>}
                 {auth.role === "admin" && <a href="/settings">Settings</a>}
-                <span className="text-dim" style={{ fontSize: "0.8rem" }}>
-                  {auth.username} ({auth.role})
-                </span>
+                <span className="who">{auth.username} ({auth.role})</span>
                 <LogoutButton />
               </nav>
             </header>
