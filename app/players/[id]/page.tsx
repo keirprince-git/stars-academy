@@ -188,12 +188,12 @@ export default async function PlayerDetailPage({
 
       {/* ── Messages ─────────────────────────────── */}
       {sp.success === "free" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Free session credit added.
         </div>
       )}
       {sp.success === "transfer" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Sessions transferred successfully.
         </div>
       )}
@@ -300,7 +300,7 @@ export default async function PlayerDetailPage({
                   {bankAllocs.map((a) => (
                     <tr key={a.id}>
                       <td>{a.trans_date}</td>
-                      <td className="text-right" style={{ color: "#2f9e44", fontWeight: 500 }}>
+                      <td className="text-right" style={{ color: "var(--success)", fontWeight: 500 }}>
                         ₦{a.amount.toLocaleString()}
                       </td>
                       <td className="text-right">{a.sessions_purchased}</td>

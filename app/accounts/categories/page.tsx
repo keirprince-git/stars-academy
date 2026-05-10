@@ -70,17 +70,17 @@ export default async function CategoriesPage({
       </div>
 
       {sp.success === "added" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Category added.
         </div>
       )}
       {sp.success === "updated" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Category updated.
         </div>
       )}
       {sp.success === "deleted" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Category deleted. Any transactions using it have been uncategorised.
         </div>
       )}
@@ -90,7 +90,7 @@ export default async function CategoriesPage({
 
       {/* ── Income categories ──────────────────────── */}
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <h2 style={{ marginBottom: "0.75rem", color: "#2f9e44" }}>Income Categories</h2>
+        <h2 style={{ marginBottom: "0.75rem", color: "var(--success)" }}>Income Categories</h2>
         <table>
           <thead>
             <tr>
@@ -138,7 +138,7 @@ export default async function CategoriesPage({
 
       {/* ── Expense categories ─────────────────────── */}
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <h2 style={{ marginBottom: "0.75rem", color: "#c92a2a" }}>Expense Categories</h2>
+        <h2 style={{ marginBottom: "0.75rem", color: "var(--danger)" }}>Expense Categories</h2>
         <table>
           <thead>
             <tr>
@@ -203,7 +203,7 @@ export default async function CategoriesPage({
             <div className="form-group">
               <label htmlFor="value">Code (auto-generated)</label>
               <input id="value" name="value" type="text" required placeholder="e.g. transport" style={{ maxWidth: "160px" }} />
-              <div style={{ fontSize: "0.75rem", color: "#6c757d", marginTop: "0.2rem" }}>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
                 Lowercase, underscores only
               </div>
             </div>

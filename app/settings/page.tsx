@@ -101,12 +101,12 @@ export default async function SettingsPage({
       <h2 style={{ marginBottom: "1rem" }}>Settings</h2>
 
       {sp.success === "saved" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Settings saved.
         </div>
       )}
       {(sp.success === "tariff_added" || sp.success === "tariff_updated" || sp.success === "tariff_deleted" || sp.success === "tariff_copied") && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           {sp.success === "tariff_added" && "Tariff package added."}
           {sp.success === "tariff_updated" && "Tariff package updated."}
           {sp.success === "tariff_deleted" && "Tariff package deleted."}
@@ -283,7 +283,7 @@ export default async function SettingsPage({
           <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
             Template for the payment reminder sent via the "Chase Payment" button on the player page.
           </p>
-          <div style={{ fontSize: "0.8rem", color: "#6c757d", marginBottom: "0.5rem" }}>
+          <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginBottom: "0.5rem" }}>
             Available placeholders: <code>{"{{player}}"}</code> (player name),{" "}
             <code>{"{{parent}}"}</code> (parent first name),{" "}
             <code>{"{{balance_line}}"}</code> (auto-generated balance text),{" "}
@@ -309,15 +309,7 @@ export default async function SettingsPage({
           <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
             Example with player "Amjad", parent "Mohammed", balance -5:
           </p>
-          <pre style={{
-            background: "#f8f9fa",
-            border: "1px solid var(--border)",
-            borderRadius: "6px",
-            padding: "1rem",
-            fontSize: "0.85rem",
-            whiteSpace: "pre-wrap",
-            lineHeight: 1.5,
-          }}>
+          <pre className="preview-block" style={{ lineHeight: 1.5 }}>
             {preview}
           </pre>
         </div>

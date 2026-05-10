@@ -86,12 +86,12 @@ export default async function AllocatePage({
       </div>
 
       {sp.success === "added" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Allocation added.
         </div>
       )}
       {sp.success === "removed" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Allocation removed.
         </div>
       )}
@@ -109,13 +109,13 @@ export default async function AllocatePage({
           <span className="text-dim">Date:</span>
           <span>{txn.trans_date}</span>
           <span className="text-dim">Total amount:</span>
-          <span style={{ color: "#2f9e44", fontWeight: 600, fontSize: "1.1rem" }}>
+          <span style={{ color: "var(--success)", fontWeight: 600, fontSize: "1.1rem" }}>
             ₦{txn.deposit.toLocaleString()}
           </span>
           <span className="text-dim">Allocated so far:</span>
           <span>₦{txn.allocated_amount.toLocaleString()}</span>
           <span className="text-dim">Remaining:</span>
-          <span style={remaining > 0 ? { color: "#e67700", fontWeight: 600 } : {}}>
+          <span style={remaining > 0 ? { color: "var(--warning)", fontWeight: 600 } : {}}>
             ₦{remaining.toLocaleString()}
           </span>
           <span className="text-dim">Description:</span>
@@ -185,7 +185,7 @@ export default async function AllocatePage({
               </select>
               <span id="playerGroup" className="text-dim" style={{ marginLeft: "0.5rem", fontSize: "0.85rem" }}></span>
               {guessedIds.length > 0 && (
-                <div style={{ fontSize: "0.8rem", color: "#6c757d", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginTop: "0.25rem" }}>
                   ★ Suggested based on transaction description
                 </div>
               )}
@@ -227,7 +227,7 @@ export default async function AllocatePage({
               </div>
             </div>
 
-            <div id="tariffHint" style={{ fontSize: "0.8rem", color: "#6c757d", marginBottom: "0.5rem", display: "none" }}></div>
+            <div id="tariffHint" style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginBottom: "0.5rem", display: "none" }}></div>
 
             <div className="form-group">
               <label htmlFor="notes">Notes (optional)</label>
@@ -251,7 +251,7 @@ export default async function AllocatePage({
       )}
 
       {remaining <= 0 && txn.status !== "ignored" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "1rem", marginTop: "0.5rem", textAlign: "center" }}>
+        <div className="alert alert-success" style={{ textAlign: "center" }}>
           This transaction is fully allocated.
           <div style={{ marginTop: "0.5rem" }}>
             <a href="/bank" className="btn btn-sm">Back to Bank</a>

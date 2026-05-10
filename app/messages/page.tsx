@@ -56,18 +56,7 @@ export default async function MessagesPage({
         <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.5rem" }}>
           Current session pricing for both age groups, with bank details.
         </p>
-        <pre
-          id="tariffMessage"
-          style={{
-            background: "#f8f9fa",
-            border: "1px solid var(--border)",
-            borderRadius: "6px",
-            padding: "1rem",
-            fontSize: "0.85rem",
-            whiteSpace: "pre-wrap",
-            lineHeight: 1.5,
-          }}
-        >
+        <pre id="tariffMessage" className="preview-block" style={{ lineHeight: 1.5 }}>
           {tariffMessage}
         </pre>
       </div>
@@ -117,18 +106,7 @@ export default async function MessagesPage({
                 Copy
               </button>
             </div>
-            <pre
-              id="cancelMessage"
-              style={{
-                background: "#f8f9fa",
-                border: "1px solid var(--border)",
-                borderRadius: "6px",
-                padding: "1rem",
-                fontSize: "0.85rem",
-                whiteSpace: "pre-wrap",
-                lineHeight: 1.5,
-              }}
-            >
+            <pre id="cancelMessage" className="preview-block" style={{ lineHeight: 1.5 }}>
               {cancellationMessage}
             </pre>
           </>

@@ -71,7 +71,10 @@ h2 {
   padding: 0.25rem 0.7rem; border-radius: 6px; font-size: 0.78rem;
   font-weight: 500;
 }
-.topbar button:hover, .topbar .btn:hover { background: rgba(255,255,255,0.08); }
+.topbar button:hover, .topbar .btn:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: var(--primary);
+}
 
 .main { flex: 1; padding: 1.5rem; max-width: 1200px; width: 100%; margin: 0 auto; }
 
@@ -145,9 +148,16 @@ td.text-right, th.text-right { font-variant-numeric: tabular-nums; }
 .badge-fullyused { color: #8a5a10; background: #fdefd0; }
 .badge-scholar   { color: #5a3296; background: #ece2f7; }
 
-.badge-active   { color: var(--success); font-weight: 600; }
-.badge-inactive { color: var(--text-dim); font-weight: 600; }
-.badge-left     { color: var(--danger); font-weight: 600; }
+.badge-active,
+.badge-inactive,
+.badge-left {
+  display: inline-block;
+  padding: 0.2rem 0.6rem; border-radius: 999px;
+  font-size: 0.74rem; font-weight: 600;
+}
+.badge-active   { color: #1d6e3f;        background: #e0f3e8; }
+.badge-inactive { color: var(--text-dim); background: #ebedf0; }
+.badge-left     { color: #b22020;        background: #fde7e7; }
 
 /* ── Forms ──────────────────────────────────────────── */
 form.inline { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
@@ -238,8 +248,43 @@ details .detail-body { padding: 0.5rem 0; }
 
 /* ── Utility ────────────────────────────────────────── */
 .text-dim { color: var(--text-dim); }
+.text-success { color: var(--success); }
+.text-danger { color: var(--danger); }
+.text-warning { color: var(--warning); }
 .text-right { text-align: right; }
 .text-center { text-align: center; }
 .mt-1 { margin-top: 0.5rem; }
 .mb-1 { margin-bottom: 0.5rem; }
 .gap-sm { gap: 0.5rem; display: flex; }
+
+/* ── Alert banners ──────────────────────────────────── */
+.alert {
+  padding: 0.75rem 1rem; border-radius: var(--radius);
+  margin-bottom: 1rem; font-size: 0.9rem;
+  border: 1px solid transparent;
+}
+.alert-success { background: #e0f3e8; color: #1d6e3f; border-color: #c5e6d2; }
+.alert-warning { background: #fdefd0; color: #8a5a10; border-color: #f5dfa5; }
+.alert-danger  { background: #fde7e7; color: #b22020; border-color: #f5cdcd; }
+.alert-info    { background: #fff4ea; color: #8a4a10; border-color: #fbe1c4; }
+
+/* ── Status pill helpers (for inline statuses outside the .badge family) ── */
+.pill {
+  display: inline-block;
+  padding: 0.18rem 0.55rem; border-radius: 999px;
+  font-size: 0.74rem; font-weight: 600;
+}
+.pill-success { background: #e0f3e8; color: #1d6e3f; }
+.pill-warning { background: #fdefd0; color: #8a5a10; }
+.pill-danger  { background: #fde7e7; color: #b22020; }
+.pill-muted   { background: #ebedf0; color: var(--text-dim); }
+.pill-scholar { background: #ece2f7; color: #5a3296; }
+
+/* ── Code/message preview blocks (warmed grey) ─────── */
+.preview-block {
+  background: #f5f1ea; border: 1px solid #ece5d6;
+  border-radius: var(--radius); padding: 0.85rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem; white-space: pre-wrap;
+  color: var(--text);
+}

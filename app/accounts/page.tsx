@@ -57,20 +57,20 @@ export default async function AccountsPage({
       {/* Summary chips */}
       <div className="summary-row">
         <div className="chip">
-          <span className="chip-value" style={{ color: "#2f9e44", fontSize: "1rem" }}>
+          <span className="chip-value" style={{ color: "var(--success)", fontSize: "1rem" }}>
             ₦{Math.round(data.totalIncome).toLocaleString()}
           </span>
           <span className="chip-label">Total Income</span>
         </div>
         <div className="chip">
-          <span className="chip-value" style={{ color: "#c92a2a", fontSize: "1rem" }}>
+          <span className="chip-value" style={{ color: "var(--danger)", fontSize: "1rem" }}>
             ₦{Math.round(data.totalExpenses).toLocaleString()}
           </span>
           <span className="chip-label">Total Expenses</span>
         </div>
         <div className="chip">
           <span className="chip-value" style={{
-            color: data.surplus >= 0 ? "#2f9e44" : "#c92a2a",
+            color: data.surplus >= 0 ? "var(--success)" : "var(--danger)",
             fontSize: "1rem",
           }}>
             ₦{Math.round(data.surplus).toLocaleString()}
@@ -83,7 +83,7 @@ export default async function AccountsPage({
 
       {/* Income */}
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <h2 style={{ marginBottom: "0.75rem", color: "#2f9e44" }}>Income</h2>
+        <h2 style={{ marginBottom: "0.75rem", color: "var(--success)" }}>Income</h2>
         {data.income.length === 0 ? (
           <p className="text-dim">No income recorded for this period.</p>
         ) : (
@@ -99,7 +99,7 @@ export default async function AccountsPage({
               {data.income.map((line) => (
                 <tr key={line.category}>
                   <td>{getCategoryLabel(line.category)}</td>
-                  <td className="text-right" style={{ color: "#2f9e44", fontWeight: 500 }}>
+                  <td className="text-right" style={{ color: "var(--success)", fontWeight: 500 }}>
                     ₦{Math.round(line.total).toLocaleString()}
                   </td>
                   <td className="text-right text-dim">{line.count}</td>
@@ -107,7 +107,7 @@ export default async function AccountsPage({
               ))}
               <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
                 <td>Total Income</td>
-                <td className="text-right" style={{ color: "#2f9e44" }}>
+                <td className="text-right" style={{ color: "var(--success)" }}>
                   ₦{Math.round(data.totalIncome).toLocaleString()}
                 </td>
                 <td></td>
@@ -119,7 +119,7 @@ export default async function AccountsPage({
 
       {/* Expenses */}
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <h2 style={{ marginBottom: "0.75rem", color: "#c92a2a" }}>Expenses</h2>
+        <h2 style={{ marginBottom: "0.75rem", color: "var(--danger)" }}>Expenses</h2>
         {data.expenses.length === 0 ? (
           <p className="text-dim">No expenses recorded for this period.</p>
         ) : (
@@ -135,7 +135,7 @@ export default async function AccountsPage({
               {data.expenses.map((line) => (
                 <tr key={line.category}>
                   <td>{getCategoryLabel(line.category)}</td>
-                  <td className="text-right" style={{ color: "#c92a2a", fontWeight: 500 }}>
+                  <td className="text-right" style={{ color: "var(--danger)", fontWeight: 500 }}>
                     ₦{Math.round(line.total).toLocaleString()}
                   </td>
                   <td className="text-right text-dim">{line.count}</td>
@@ -143,7 +143,7 @@ export default async function AccountsPage({
               ))}
               <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
                 <td>Total Expenses</td>
-                <td className="text-right" style={{ color: "#c92a2a" }}>
+                <td className="text-right" style={{ color: "var(--danger)" }}>
                   ₦{Math.round(data.totalExpenses).toLocaleString()}
                 </td>
                 <td></td>
@@ -159,7 +159,7 @@ export default async function AccountsPage({
           <tbody>
             <tr style={{ fontWeight: 600, fontSize: "1.1rem" }}>
               <td>Net Surplus / (Deficit)</td>
-              <td className="text-right" style={{ color: data.surplus >= 0 ? "#2f9e44" : "#c92a2a" }}>
+              <td className="text-right" style={{ color: data.surplus >= 0 ? "var(--success)" : "var(--danger)" }}>
                 {data.surplus < 0 ? `(₦${Math.round(Math.abs(data.surplus)).toLocaleString()})` : `₦${Math.round(data.surplus).toLocaleString()}`}
               </td>
             </tr>
@@ -169,13 +169,7 @@ export default async function AccountsPage({
 
       {/* Uncategorised warning */}
       {data.uncategorisedCount > 0 && (
-        <div style={{
-          background: "#fff3cd",
-          border: "1px solid #ffecb5",
-          borderRadius: "6px",
-          padding: "0.75rem 1rem",
-          fontSize: "0.9rem",
-        }}>
+        <div className="alert alert-warning">
           {data.uncategorisedCount} ignored transaction{data.uncategorisedCount !== 1 ? "s" : ""} not yet categorised
           (₦{Math.round(data.uncategorisedWithdrawals).toLocaleString()} withdrawals,
           ₦{Math.round(data.uncategorisedDeposits).toLocaleString()} deposits).{" "}

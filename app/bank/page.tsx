@@ -123,12 +123,12 @@ export default async function BankPage({
 
       {/* Messages */}
       {success === "imported" && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           Imported {sp.count} transactions ({sp.skipped !== "0" ? `${sp.skipped} duplicates skipped` : "no duplicates"}).
         </div>
       )}
       {(success === "ignored" || success === "restored" || success === "allocated" || success === "categorised") && (
-        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        <div className="alert alert-success">
           {success === "ignored" ? "Transaction ignored." : success === "restored" ? "Transaction restored." : success === "categorised" ? "Category updated." : "Payment allocated."}
         </div>
       )}
@@ -151,8 +151,8 @@ export default async function BankPage({
           <span className="chip-value">{summary.total}</span>
           <span className="chip-label">Total</span>
         </div>
-        <div className="chip" style={summary.unallocated > 0 ? { borderColor: "#e67700" } : {}}>
-          <span className="chip-value" style={summary.unallocated > 0 ? { color: "#e67700" } : {}}>{summary.unallocated}</span>
+        <div className="chip" style={summary.unallocated > 0 ? { borderColor: "var(--warning)" } : {}}>
+          <span className="chip-value" style={summary.unallocated > 0 ? { color: "var(--warning)" } : {}}>{summary.unallocated}</span>
           <span className="chip-label">Needs action</span>
         </div>
         <div className="chip">
@@ -165,15 +165,15 @@ export default async function BankPage({
         </div>
         {summary.total_allocated_amount > 0 && (
           <div className="chip">
-            <span className="chip-value" style={{ color: "#2f9e44", fontSize: "1rem" }}>
+            <span className="chip-value" style={{ color: "var(--success)", fontSize: "1rem" }}>
               ₦{Math.round(summary.total_allocated_amount).toLocaleString()}
             </span>
             <span className="chip-label">Total allocated</span>
           </div>
         )}
         {summary.unallocated_amount > 0 && (
-          <div className="chip" style={{ borderColor: "#e67700" }}>
-            <span className="chip-value" style={{ color: "#e67700", fontSize: "1rem" }}>
+          <div className="chip" style={{ borderColor: "var(--warning)" }}>
+            <span className="chip-value" style={{ color: "var(--warning)", fontSize: "1rem" }}>
               ₦{Math.round(summary.unallocated_amount).toLocaleString()}
             </span>
             <span className="chip-label">Unallocated deposits</span>
@@ -260,28 +260,19 @@ export default async function BankPage({
                   <td style={{ maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis" }} title={t.description}>
                     {t.description}
                   </td>
-                  <td className="text-right" style={t.deposit > 0 ? { color: "#2f9e44", fontWeight: 500 } : {}}>
+                  <td className="text-right" style={t.deposit > 0 ? { color: "var(--success)", fontWeight: 500 } : {}}>
                     {t.deposit > 0 ? `₦${t.deposit.toLocaleString()}` : ""}
                   </td>
-                  <td className="text-right" style={t.withdrawal > 0 ? { color: "#c92a2a" } : {}}>
+                  <td className="text-right" style={t.withdrawal > 0 ? { color: "var(--danger)" } : {}}>
                     {t.withdrawal > 0 ? `₦${t.withdrawal.toLocaleString()}` : ""}
                   </td>
                   <td>
-                    <span style={{
-                      display: "inline-block",
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      fontSize: "0.8rem",
-                      fontWeight: 500,
-                      background:
-                        t.status === "allocated" ? "#d1e7dd" :
-                        t.status === "partial" ? "#fff3cd" :
-                        t.status === "ignored" ? "#e9ecef" : "#fff3cd",
-                      color:
-                        t.status === "allocated" ? "#0f5132" :
-                        t.status === "partial" ? "#664d03" :
-                        t.status === "ignored" ? "#6c757d" : "#664d03",
-                    }}>
+                    <span className={
+                      t.status === "allocated" ? "pill pill-success" :
+                      t.status === "partial"   ? "pill pill-warning" :
+                      t.status === "ignored"   ? "pill pill-muted" :
+                                                 "pill pill-warning"
+                    }>
                       {statusLabel}
                     </span>
                   </td>

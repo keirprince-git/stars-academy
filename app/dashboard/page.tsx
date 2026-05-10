@@ -89,7 +89,7 @@ export default async function DashboardPage({
           <span className="chip-label">Credit</span>
         </a>
         <a href="/dashboard?payStatus=Scholarship" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
-          <span className="chip-value" style={{ color: "#6f42c1" }}>{summary.scholarship}</span>
+          <span className="chip-value" style={{ color: "#5a3296" }}>{summary.scholarship}</span>
           <span className="chip-label">Scholarship</span>
         </a>
       </div>

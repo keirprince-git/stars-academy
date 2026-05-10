@@ -61,7 +61,7 @@ export default async function AttendancePage({
         </div>
 
         {success && (
-          <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+          <div className="alert alert-success">
             Attendance recorded: {sp.recorded} player{sp.recorded !== "1" ? "s" : ""} attended on {sp.date}.
           </div>
         )}
@@ -117,7 +117,7 @@ export default async function AttendancePage({
                     display: "flex", alignItems: "center", gap: "0.5rem",
                     fontSize: "0.9rem", cursor: "pointer",
                     padding: "0.45rem 0.6rem", borderRadius: "4px",
-                    background: i % 2 === 0 ? "transparent" : "#f8f9fa",
+                    background: i % 2 === 0 ? "transparent" : "#f5f1ea",
                   }}>
                     <input
                       type="checkbox"
