@@ -738,7 +738,8 @@ export function getBankTransactionSummary() {
          COUNT(CASE WHEN status='unallocated' OR status='partial' THEN 1 END) AS unallocated,
          COUNT(CASE WHEN status='allocated' THEN 1 END) AS allocated,
          COUNT(CASE WHEN status='ignored' THEN 1 END) AS ignored,
-         COALESCE(SUM(CASE WHEN (status='unallocated' OR status='partial') AND deposit > 0 THEN deposit - allocated_amount END), 0) AS unallocated_amount
+         COALESCE(SUM(CASE WHEN (status='unallocated' OR status='partial') AND deposit > 0 THEN deposit - allocated_amount END), 0) AS unallocated_amount,
+         COALESCE(SUM(allocated_amount), 0) AS total_allocated_amount
        FROM bank_transactions`
     )
     .get() as {
@@ -747,6 +748,7 @@ export function getBankTransactionSummary() {
     allocated: number;
     ignored: number;
     unallocated_amount: number;
+    total_allocated_amount: number;
   };
 
   // Latest balance from the most recent transaction
