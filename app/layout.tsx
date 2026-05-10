@@ -33,6 +33,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <a href="/attendance">Attendance</a>
                 <a href="/bank">Bank</a>
                 {auth.role === "admin" && <a href="/accounts">Accounts</a>}
+                {auth.role === "admin" && <a href="/settings">Settings</a>}
                 <span className="text-dim" style={{ fontSize: "0.8rem" }}>
                   {auth.username} ({auth.role})
                 </span>

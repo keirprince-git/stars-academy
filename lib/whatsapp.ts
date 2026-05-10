@@ -1,12 +1,6 @@
 /* ── WhatsApp message templates for Stars Academy ──── */
 
-const BANK_DETAILS = {
-  name: "The Stars Football Academy",
-  bank: "Taj Bank",
-  account: "0010270588",
-};
-
-const COACH_PHONE = "080 7077 7069";
+import { getAllSettings } from "./db";
 
 export interface ChaseMessageParams {
   playerName: string;
@@ -16,12 +10,20 @@ export interface ChaseMessageParams {
 
 /**
  * Generate a payment chase message for a player's parent.
+ * Uses the template and bank details from the settings table.
  * Returns the message text (ready to URL-encode for wa.me).
+ *
+ * Template placeholders:
+ *   {{player}}       — player name
+ *   {{balance_line}} — auto-generated balance description
+ *   {{bank_name}}    — account name from settings
+ *   {{bank_bank}}    — bank name from settings
+ *   {{bank_account}} — account number from settings
+ *   {{coach_phone}}  — coach phone from settings
+ *   {{parent}}       — parent's first name (or "there")
  */
 export function buildChaseMessage({ playerName, balance, parentName }: ChaseMessageParams): string {
-  const greeting = parentName
-    ? `Dear ${parentName.split(/\s+/)[0]}`
-    : "Good day";
+  const settings = getAllSettings();
 
   const balanceLine = balance < 0
     ? `${playerName} has used ${Math.abs(balance)} session${Math.abs(balance) !== 1 ? "s" : ""} beyond their paid balance and currently owes for those sessions.`
@@ -29,22 +31,18 @@ export function buildChaseMessage({ playerName, balance, parentName }: ChaseMess
     ? `${playerName}'s session balance has reached zero.`
     : `${playerName} has ${balance} session${balance !== 1 ? "s" : ""} remaining.`;
 
-  return [
-    `${greeting},`,
-    ``,
-    `I hope you're well. This is a reminder regarding ${playerName}'s sessions at Stars Football Academy.`,
-    ``,
-    balanceLine,
-    ``,
-    `Please make a payment to:`,
-    `Account Name: ${BANK_DETAILS.name}`,
-    `Bank: ${BANK_DETAILS.bank}`,
-    `Account Number: ${BANK_DETAILS.account}`,
-    ``,
-    `Please send confirmation of payment to Coach Sunny on ${COACH_PHONE}.`,
-    ``,
-    `Thank you!`,
-  ].join("\n");
+  const parentFirst = parentName ? parentName.split(/\s+/)[0] : "there";
+
+  let message = settings.chase_template || "";
+  message = message.replace(/\{\{player\}\}/g, playerName);
+  message = message.replace(/\{\{balance_line\}\}/g, balanceLine);
+  message = message.replace(/\{\{bank_name\}\}/g, settings.bank_name || "");
+  message = message.replace(/\{\{bank_bank\}\}/g, settings.bank_bank || "");
+  message = message.replace(/\{\{bank_account\}\}/g, settings.bank_account || "");
+  message = message.replace(/\{\{coach_phone\}\}/g, settings.coach_phone || "");
+  message = message.replace(/\{\{parent\}\}/g, parentFirst);
+
+  return message;
 }
 
 /**

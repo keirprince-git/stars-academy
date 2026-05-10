@@ -18,6 +18,7 @@ export function db(): Database.Database {
     ensureSchema(_db);
     seedDefaultUsers(_db);
     seedDefaultCategories(_db);
+    seedDefaultSettings(_db);
   }
   return _db;
 }
@@ -144,6 +145,11 @@ function ensureSchema(d: Database.Database) {
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS categories (
       id     INTEGER PRIMARY KEY AUTOINCREMENT,
       value  TEXT    NOT NULL UNIQUE,
@@ -246,6 +252,64 @@ export function deleteCategory(id: number) {
     db().prepare("UPDATE bank_transactions SET category = NULL WHERE category = ?").run(cat.value);
   }
   db().prepare("DELETE FROM categories WHERE id = ?").run(id);
+}
+
+/* ── Settings ──────────────────────────────────────── */
+
+const DEFAULT_SETTINGS: Record<string, string> = {
+  bank_name: "The Stars Football Academy",
+  bank_bank: "Taj Bank",
+  bank_account: "0010270588",
+  coach_phone: "080 7077 7069",
+  chase_template: [
+    "I hope you're well. This is a reminder regarding {{player}}'s sessions at Stars Football Academy.",
+    "",
+    "{{balance_line}}",
+    "",
+    "Please make a payment to:",
+    "Account Name: {{bank_name}}",
+    "Bank: {{bank_bank}}",
+    "Account Number: {{bank_account}}",
+    "",
+    "Please send confirmation of payment to Coach Sunny on {{coach_phone}}.",
+    "",
+    "Thank you!",
+  ].join("\n"),
+};
+
+function seedDefaultSettings(d: Database.Database) {
+  const count = d.prepare("SELECT COUNT(*) as c FROM settings").get() as { c: number };
+  if (count.c > 0) return;
+
+  const insert = d.prepare("INSERT INTO settings (key, value) VALUES (?, ?)");
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    insert.run(key, value);
+  }
+  console.log("[stars-academy] Seeded default settings");
+}
+
+export function getSetting(key: string): string | null {
+  const row = db()
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  return row?.value ?? DEFAULT_SETTINGS[key] ?? null;
+}
+
+export function getAllSettings(): Record<string, string> {
+  const rows = db()
+    .prepare("SELECT key, value FROM settings")
+    .all() as Array<{ key: string; value: string }>;
+  const result: Record<string, string> = { ...DEFAULT_SETTINGS };
+  for (const row of rows) {
+    result[row.key] = row.value;
+  }
+  return result;
+}
+
+export function setSetting(key: string, value: string) {
+  db()
+    .prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+    .run(key, value);
 }
 
 /* ── Player queries ─────────────────────────────────── */
