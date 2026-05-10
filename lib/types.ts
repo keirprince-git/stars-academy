@@ -76,6 +76,7 @@ export interface BankTransaction {
   status: string;           // 'unallocated' | 'partial' | 'allocated' | 'ignored'
   allocated_amount: number; // sum of all allocations so far
   import_batch: string;     // groups rows from same PDF upload
+  category: string | null;  // accounts category (e.g. 'coaching_fees')
   notes: string | null;
   created_at: string;
 }

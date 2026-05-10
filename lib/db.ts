@@ -41,6 +41,14 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: add category to bank_transactions ── */
+  try {
+    const cols = d.prepare("PRAGMA table_info(bank_transactions)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "category")) {
+      d.exec("ALTER TABLE bank_transactions ADD COLUMN category TEXT");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   /* ── Migration: add parent fields to players ── */
   try {
     const cols = d.prepare("PRAGMA table_info(players)").all() as Array<{ name: string }>;
@@ -118,6 +126,7 @@ function ensureSchema(d: Database.Database) {
                             CHECK (status IN ('unallocated','partial','allocated','ignored')),
       allocated_amount      REAL    NOT NULL DEFAULT 0,
       import_batch          TEXT    NOT NULL,
+      category              TEXT,
       notes                 TEXT,
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
@@ -763,5 +772,108 @@ export function getBankTransactionSummary() {
     ...row,
     latest_balance: latest?.balance ?? null,
     latest_date: latest?.trans_date ?? null,
+  };
+}
+
+/* ── Category management ───────────────────────────── */
+
+export function setCategoryForTransaction(txnId: number, category: string | null) {
+  db()
+    .prepare("UPDATE bank_transactions SET category = ? WHERE id = ?")
+    .run(category, txnId);
+}
+
+/* ── Accounts / Income & Expenditure ───────────────── */
+
+export interface AccountLine {
+  category: string;
+  total: number;
+  count: number;
+}
+
+export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
+  const d = db();
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (opts?.from) {
+    conditions.push("trans_date >= ?");
+    params.push(opts.from);
+  }
+  if (opts?.to) {
+    conditions.push("trans_date <= ?");
+    params.push(opts.to);
+  }
+
+  const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+  // Session fees: sum of allocated amounts (these are player fee income)
+  const sessionFees = d
+    .prepare(
+      `SELECT COALESCE(SUM(allocated_amount), 0) AS total, COUNT(*) AS count
+       FROM bank_transactions ${where ? where + " AND" : "WHERE"} allocated_amount > 0`
+    )
+    .get(...params) as { total: number; count: number };
+
+  // Categorised transactions (deposits = income, withdrawals = expense)
+  const categorised = d
+    .prepare(
+      `SELECT category,
+              COALESCE(SUM(deposit), 0) AS total_deposit,
+              COALESCE(SUM(withdrawal), 0) AS total_withdrawal,
+              COUNT(*) AS count
+       FROM bank_transactions
+       ${where ? where + (conditions.length > 0 ? " AND" : "") : "WHERE"} category IS NOT NULL
+       GROUP BY category`
+    )
+    .all(...params) as Array<{
+    category: string;
+    total_deposit: number;
+    total_withdrawal: number;
+    count: number;
+  }>;
+
+  // Uncategorised ignored transactions
+  const uncategorised = d
+    .prepare(
+      `SELECT COALESCE(SUM(deposit), 0) AS total_deposit,
+              COALESCE(SUM(withdrawal), 0) AS total_withdrawal,
+              COUNT(*) AS count
+       FROM bank_transactions
+       ${where ? where + " AND" : "WHERE"} status = 'ignored' AND category IS NULL`
+    )
+    .get(...params) as { total_deposit: number; total_withdrawal: number; count: number };
+
+  // Build income lines
+  const income: AccountLine[] = [];
+  if (sessionFees.total > 0) {
+    income.push({ category: "session_fees", total: sessionFees.total, count: sessionFees.count });
+  }
+  for (const row of categorised) {
+    if (row.total_deposit > 0) {
+      income.push({ category: row.category, total: row.total_deposit, count: row.count });
+    }
+  }
+
+  // Build expense lines
+  const expenses: AccountLine[] = [];
+  for (const row of categorised) {
+    if (row.total_withdrawal > 0) {
+      expenses.push({ category: row.category, total: row.total_withdrawal, count: row.count });
+    }
+  }
+
+  const totalIncome = income.reduce((s, l) => s + l.total, 0);
+  const totalExpenses = expenses.reduce((s, l) => s + l.total, 0);
+
+  return {
+    income,
+    expenses,
+    totalIncome,
+    totalExpenses,
+    surplus: totalIncome - totalExpenses,
+    uncategorisedDeposits: uncategorised.total_deposit,
+    uncategorisedWithdrawals: uncategorised.total_withdrawal,
+    uncategorisedCount: uncategorised.count,
   };
 }

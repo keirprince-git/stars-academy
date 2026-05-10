@@ -6,7 +6,9 @@ import {
   ignoreBankTransaction,
   restoreBankTransaction,
   getBankAllocations,
+  setCategoryForTransaction,
 } from "@/lib/db";
+import { CATEGORIES, getCategoryLabel } from "@/lib/categories";
 import { parseBankStatementText } from "@/lib/parse-bank-pdf";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
@@ -86,6 +88,14 @@ export default async function BankPage({
     redirect("/bank?success=restored");
   };
 
+  const handleCategorise = async (formData: FormData) => {
+    "use server";
+    const txnId = parseInt(formData.get("txn_id") as string, 10);
+    const category = (formData.get("category") as string) || null;
+    setCategoryForTransaction(txnId, category);
+    redirect("/bank?success=categorised");
+  };
+
   /* ── Data ────────────────────────────────────────────── */
 
   const summary = getBankTransactionSummary();
@@ -116,9 +126,9 @@ export default async function BankPage({
           Imported {sp.count} transactions ({sp.skipped !== "0" ? `${sp.skipped} duplicates skipped` : "no duplicates"}).
         </div>
       )}
-      {(success === "ignored" || success === "restored" || success === "allocated") && (
+      {(success === "ignored" || success === "restored" || success === "allocated" || success === "categorised") && (
         <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
-          {success === "ignored" ? "Transaction ignored." : success === "restored" ? "Transaction restored." : "Payment allocated."}
+          {success === "ignored" ? "Transaction ignored." : success === "restored" ? "Transaction restored." : success === "categorised" ? "Category updated." : "Payment allocated."}
         </div>
       )}
       {error === "no_file" && (
@@ -285,6 +295,18 @@ export default async function BankPage({
                         ))}
                       </div>
                     ) : null}
+                    {t.status === "ignored" && (
+                      <form action={handleCategorise} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <input type="hidden" name="txn_id" value={t.id} />
+                        <select name="category" defaultValue={t.category ?? ""} style={{ fontSize: "0.8rem", padding: "2px 4px", maxWidth: "140px" }}>
+                          <option value="">— Category —</option>
+                          {CATEGORIES.map(c => (
+                            <option key={c.value} value={c.value}>{c.label}</option>
+                          ))}
+                        </select>
+                        <button type="submit" className="btn btn-sm" style={{ padding: "2px 6px", fontSize: "0.75rem" }}>Set</button>
+                      </form>
+                    )}
                   </td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {(t.status === "unallocated" || t.status === "partial") && t.deposit > 0 && (
