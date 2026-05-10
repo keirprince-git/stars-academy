@@ -149,11 +149,11 @@ export function buildCancellationMessage({
   reason: string;
 }): string {
   const lines: string[] = [];
-  lines.push("Dear Parents,");
+  lines.push("Dear Parents and Guardians,");
   lines.push("");
   lines.push(`Please note that the training session on *${date}* has been cancelled due to ${reason}.`);
   lines.push("");
-  lines.push("We will notify you when sessions resume. Thank you for your understanding.");
+  lines.push("Thank you for your understanding.");
 
   return lines.join("\n");
 }
