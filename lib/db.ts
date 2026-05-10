@@ -17,6 +17,7 @@ export function db(): Database.Database {
     _db.pragma("foreign_keys = ON");
     ensureSchema(_db);
     seedDefaultUsers(_db);
+    seedDefaultCategories(_db);
   }
   return _db;
 }
@@ -143,6 +144,14 @@ function ensureSchema(d: Database.Database) {
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS categories (
+      id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      value  TEXT    NOT NULL UNIQUE,
+      label  TEXT    NOT NULL,
+      type   TEXT    NOT NULL CHECK (type IN ('income','expense')),
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_att_player   ON attendance_log(player_id);
     CREATE INDEX IF NOT EXISTS idx_att_date     ON attendance_log(session_date);
     CREATE INDEX IF NOT EXISTS idx_sp_player    ON sessions_purchased(player_id);
@@ -165,6 +174,78 @@ function seedDefaultUsers(d: Database.Database) {
   insert.run("admin", hashPassword("stars2026"), "admin");
   insert.run("recorder", hashPassword("recorder2026"), "recorder");
   console.log("[stars-academy] Created default users: admin, recorder");
+}
+
+/* ── Seed default categories if table is empty ─────── */
+
+const DEFAULT_CATEGORIES = [
+  { value: "session_fees",  label: "Session fees",      type: "income",  sort: 1 },
+  { value: "kit_sales",     label: "Kit sales",         type: "income",  sort: 2 },
+  { value: "camp_fees",     label: "Camp fees",         type: "income",  sort: 3 },
+  { value: "other_income",  label: "Other income",      type: "income",  sort: 4 },
+  { value: "coaching_fees", label: "Coaching fees",     type: "expense", sort: 10 },
+  { value: "pitch_hire",    label: "Pitch / venue hire", type: "expense", sort: 11 },
+  { value: "equipment_kit", label: "Equipment & kit",   type: "expense", sort: 12 },
+  { value: "bank_charges",  label: "Bank charges",      type: "expense", sort: 13 },
+  { value: "stamp_duty",    label: "Stamp duty",        type: "expense", sort: 14 },
+  { value: "drawings",      label: "Drawings",          type: "expense", sort: 15 },
+  { value: "insurance",     label: "Insurance",         type: "expense", sort: 16 },
+  { value: "salaries",      label: "Salaries",          type: "expense", sort: 17 },
+  { value: "setup_costs",   label: "Set-up costs",      type: "expense", sort: 18 },
+  { value: "other_expense", label: "Other expense",     type: "expense", sort: 19 },
+];
+
+function seedDefaultCategories(d: Database.Database) {
+  const count = d.prepare("SELECT COUNT(*) as c FROM categories").get() as { c: number };
+  if (count.c > 0) return;
+
+  const insert = d.prepare(
+    "INSERT INTO categories (value, label, type, sort_order) VALUES (?, ?, ?, ?)"
+  );
+  for (const cat of DEFAULT_CATEGORIES) {
+    insert.run(cat.value, cat.label, cat.type, cat.sort);
+  }
+  console.log("[stars-academy] Seeded default categories");
+}
+
+/* ── Category queries ──────────────────────────────── */
+
+export interface CategoryRow {
+  id: number;
+  value: string;
+  label: string;
+  type: "income" | "expense";
+  sort_order: number;
+}
+
+export function getCategories(): CategoryRow[] {
+  return db()
+    .prepare("SELECT * FROM categories ORDER BY type, sort_order")
+    .all() as CategoryRow[];
+}
+
+export function addCategory(value: string, label: string, type: "income" | "expense") {
+  const maxSort = db()
+    .prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS next FROM categories WHERE type = ?")
+    .get(type) as { next: number };
+  db()
+    .prepare("INSERT INTO categories (value, label, type, sort_order) VALUES (?, ?, ?, ?)")
+    .run(value, label, type, maxSort.next);
+}
+
+export function updateCategory(id: number, label: string, type: "income" | "expense") {
+  db()
+    .prepare("UPDATE categories SET label = ?, type = ? WHERE id = ?")
+    .run(label, type, id);
+}
+
+export function deleteCategory(id: number) {
+  // Clear category from any transactions using it
+  const cat = db().prepare("SELECT value FROM categories WHERE id = ?").get(id) as { value: string } | undefined;
+  if (cat) {
+    db().prepare("UPDATE bank_transactions SET category = NULL WHERE category = ?").run(cat.value);
+  }
+  db().prepare("DELETE FROM categories WHERE id = ?").run(id);
 }
 
 /* ── Player queries ─────────────────────────────────── */

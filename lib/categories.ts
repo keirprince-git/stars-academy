@@ -1,32 +1,21 @@
 /* ── Transaction categories for Stars Academy accounts ── */
+/* Categories are stored in the database and managed via the UI. */
+/* This module re-exports helpers for convenience. */
 
-export interface Category {
-  value: string;
-  label: string;
-  type: "income" | "expense";
+import { getCategories, type CategoryRow } from "./db";
+
+export type Category = CategoryRow;
+
+export function getAllCategories(): Category[] {
+  return getCategories();
 }
 
-export const CATEGORIES: Category[] = [
-  // Income
-  { value: "session_fees",    label: "Session fees",     type: "income" },
-  { value: "kit_sales",       label: "Kit sales",        type: "income" },
-  { value: "other_income",    label: "Other income",     type: "income" },
-
-  // Expenses
-  { value: "coaching_fees",   label: "Coaching fees",    type: "expense" },
-  { value: "pitch_hire",      label: "Pitch / venue hire", type: "expense" },
-  { value: "equipment_kit",   label: "Equipment & kit",  type: "expense" },
-  { value: "bank_charges",    label: "Bank charges",     type: "expense" },
-  { value: "other_expense",   label: "Other expense",    type: "expense" },
-];
-
-export const INCOME_CATEGORIES = CATEGORIES.filter(c => c.type === "income");
-export const EXPENSE_CATEGORIES = CATEGORIES.filter(c => c.type === "expense");
-
 export function getCategoryLabel(value: string): string {
-  return CATEGORIES.find(c => c.value === value)?.label ?? value;
+  const cats = getCategories();
+  return cats.find(c => c.value === value)?.label ?? value;
 }
 
 export function getCategoryType(value: string): "income" | "expense" | null {
-  return CATEGORIES.find(c => c.value === value)?.type ?? null;
+  const cats = getCategories();
+  return cats.find(c => c.value === value)?.type ?? null;
 }

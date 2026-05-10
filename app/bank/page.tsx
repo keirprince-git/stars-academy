@@ -8,7 +8,7 @@ import {
   getBankAllocations,
   setCategoryForTransaction,
 } from "@/lib/db";
-import { CATEGORIES, getCategoryLabel } from "@/lib/categories";
+import { getAllCategories } from "@/lib/categories";
 import { parseBankStatementText } from "@/lib/parse-bank-pdf";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
@@ -98,6 +98,7 @@ export default async function BankPage({
 
   /* ── Data ────────────────────────────────────────────── */
 
+  const categories = getAllCategories();
   const summary = getBankTransactionSummary();
   const transactions = getBankTransactions({
     status: statusFilter,
@@ -300,7 +301,7 @@ export default async function BankPage({
                         <input type="hidden" name="txn_id" value={t.id} />
                         <select name="category" defaultValue={t.category ?? ""} style={{ fontSize: "0.8rem", padding: "2px 4px", maxWidth: "140px" }}>
                           <option value="">— Category —</option>
-                          {CATEGORIES.map(c => (
+                          {categories.map(c => (
                             <option key={c.value} value={c.value}>{c.label}</option>
                           ))}
                         </select>
