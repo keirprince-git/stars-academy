@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
-import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, updatePlayer, addSessionAdjustment } from "@/lib/db";
+import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 export default async function PlayerDetailPage({
@@ -41,30 +41,38 @@ export default async function PlayerDetailPage({
     ? Math.round((attStats.attended / attStats.total) * 100)
     : 0;
 
-  // Last 10 sessions streak
-  const recent10 = recentAtt.slice(0, 10);
-  let currentStreak = 0;
-  for (const a of recent10) {
-    if (a.attended === 1) currentStreak++;
-    else break;
-  }
-
   const isAdmin = auth.role === "admin";
   const editing = sp.edit === "1" && isAdmin;
 
-  async function handleAdjustment(formData: FormData) {
+  const allPlayers = isAdmin ? getPlayers({ status: "Active", sort: "name", dir: "asc" }) : [];
+
+  async function handleFreeCredit(formData: FormData) {
     "use server";
     const playerId = Number(formData.get("player_id"));
     const sessions = parseInt(formData.get("sessions") as string, 10);
-    const type = formData.get("type") as string;
     const notes = (formData.get("notes") as string) || null;
 
-    if (!playerId || isNaN(sessions) || sessions === 0) {
+    if (!playerId || isNaN(sessions) || sessions <= 0) {
       redirect(`/players/${playerId}?error=invalid`);
     }
 
-    addSessionAdjustment(playerId, sessions, type, notes);
-    redirect(`/players/${playerId}?success=adjusted`);
+    addFreeSessionCredit(playerId, sessions, notes);
+    redirect(`/players/${playerId}?success=free`);
+  }
+
+  async function handleTransfer(formData: FormData) {
+    "use server";
+    const toPlayerId = Number(formData.get("player_id"));
+    const fromPlayerId = Number(formData.get("from_player_id"));
+    const sessions = parseInt(formData.get("sessions") as string, 10);
+    const notes = (formData.get("notes") as string) || null;
+
+    if (!toPlayerId || !fromPlayerId || toPlayerId === fromPlayerId || isNaN(sessions) || sessions <= 0) {
+      redirect(`/players/${toPlayerId}?error=invalid_transfer`);
+    }
+
+    transferSessions(fromPlayerId, toPlayerId, sessions, notes);
+    redirect(`/players/${toPlayerId}?success=transfer`);
   }
 
   async function handleSave(formData: FormData) {
@@ -137,47 +145,75 @@ export default async function PlayerDetailPage({
           }}>{attendanceRate}%</span>
           <span className="chip-label">Attendance Rate</span>
         </div>
-        <div className="chip">
-          <span className="chip-value">{currentStreak}/{recent10.length}</span>
-          <span className="chip-label">Recent Streak</span>
-        </div>
       </div>
 
       {/* ── Messages ─────────────────────────────── */}
-      {sp.success === "adjusted" && (
+      {sp.success === "free" && (
         <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
-          Session adjustment added.
+          Free session credit added.
+        </div>
+      )}
+      {sp.success === "transfer" && (
+        <div style={{ background: "#d1e7dd", border: "1px solid #badbcc", borderRadius: "6px", padding: "0.75rem 1rem", marginBottom: "1rem", fontSize: "0.9rem" }}>
+          Sessions transferred successfully.
         </div>
       )}
       {sp.error === "invalid" && (
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Please enter a valid number of sessions.</div>
       )}
+      {sp.error === "invalid_transfer" && (
+        <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Invalid transfer — check both players and session count.</div>
+      )}
 
-      {/* ── Add credit / adjustment (admin only) ── */}
+      {/* ── Admin actions (admin only) ────────────── */}
       {isAdmin && !editing && (
-        <div className="card" style={{ marginBottom: "1rem" }}>
-          <h2 style={{ marginBottom: "0.5rem" }}>Add Session Credit</h2>
-          <form action={handleAdjustment}>
-            <input type="hidden" name="player_id" value={player.id} />
-            <div className="form-row" style={{ alignItems: "flex-end" }}>
-              <div className="form-group">
-                <label htmlFor="sessions">Sessions</label>
-                <input id="sessions" name="sessions" type="number" min="1" defaultValue="1" required style={{ maxWidth: "100px" }} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+          {/* Free sessions */}
+          <div className="card">
+            <h2 style={{ marginBottom: "0.5rem" }}>Give Free Sessions</h2>
+            <form action={handleFreeCredit}>
+              <input type="hidden" name="player_id" value={player.id} />
+              <div className="form-row" style={{ alignItems: "flex-end" }}>
+                <div className="form-group">
+                  <label htmlFor="free_sessions">Sessions</label>
+                  <input id="free_sessions" name="sessions" type="number" min="1" defaultValue="1" required style={{ maxWidth: "80px" }} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label htmlFor="free_notes">Notes</label>
+                  <input id="free_notes" name="notes" type="text" placeholder="e.g. Birthday bonus" />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Add</button>
               </div>
-              <div className="form-group">
-                <label htmlFor="type">Type</label>
-                <select id="type" name="type" style={{ maxWidth: "180px" }}>
-                  <option value="Adjustment">Free session</option>
-                  <option value="Transfer">Transfer from another player</option>
-                </select>
+            </form>
+          </div>
+
+          {/* Transfer */}
+          <div className="card">
+            <h2 style={{ marginBottom: "0.5rem" }}>Transfer Sessions In</h2>
+            <form action={handleTransfer}>
+              <input type="hidden" name="player_id" value={player.id} />
+              <div className="form-row" style={{ alignItems: "flex-end" }}>
+                <div className="form-group">
+                  <label htmlFor="from_player_id">From</label>
+                  <select id="from_player_id" name="from_player_id" required style={{ maxWidth: "200px" }}>
+                    <option value="">— Select —</option>
+                    {allPlayers.filter(p => p.id !== player.id).map(p => (
+                      <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="xfer_sessions">Sessions</label>
+                  <input id="xfer_sessions" name="sessions" type="number" min="1" defaultValue="1" required style={{ maxWidth: "80px" }} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label htmlFor="xfer_notes">Notes</label>
+                  <input id="xfer_notes" name="notes" type="text" placeholder="e.g. Sibling share" />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Transfer</button>
               </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label htmlFor="adj_notes">Notes (optional)</label>
-                <input id="adj_notes" name="notes" type="text" placeholder="e.g. Birthday bonus" />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Add</button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 

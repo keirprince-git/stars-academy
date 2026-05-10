@@ -457,10 +457,9 @@ export function getPlayerPurchases(playerId: number) {
   }[];
 }
 
-export function addSessionAdjustment(
+export function addFreeSessionCredit(
   playerId: number,
   sessions: number,
-  type: string,
   notes: string | null,
 ) {
   const today = new Date().toISOString().slice(0, 10);
@@ -468,9 +467,35 @@ export function addSessionAdjustment(
     .prepare(
       `INSERT INTO sessions_purchased
          (player_id, purchase_date, type, amount_paid, sessions_purchased, package, notes)
-       VALUES (?, ?, ?, 0, ?, ?, ?)`
+       VALUES (?, ?, 'Adjustment', 0, ?, 'Free session', ?)`
     )
-    .run(playerId, today, type, sessions, type === "Adjustment" ? "Free session" : null, notes);
+    .run(playerId, today, sessions, notes);
+}
+
+export function transferSessions(
+  fromPlayerId: number,
+  toPlayerId: number,
+  sessions: number,
+  notes: string | null,
+) {
+  const today = new Date().toISOString().slice(0, 10);
+  const d = db();
+
+  const insert = d.prepare(
+    `INSERT INTO sessions_purchased
+       (player_id, purchase_date, type, amount_paid, sessions_purchased, package, notes)
+     VALUES (?, ?, 'Transfer', 0, ?, 'Transfer', ?)`
+  );
+
+  const fromName = (d.prepare("SELECT name FROM players WHERE id = ?").get(fromPlayerId) as { name: string })?.name ?? `P${fromPlayerId}`;
+  const toName = (d.prepare("SELECT name FROM players WHERE id = ?").get(toPlayerId) as { name: string })?.name ?? `P${toPlayerId}`;
+
+  const tx = d.transaction(() => {
+    insert.run(fromPlayerId, today, -sessions, notes ? `To ${toName}: ${notes}` : `To ${toName}`);
+    insert.run(toPlayerId, today, sessions, notes ? `From ${fromName}: ${notes}` : `From ${fromName}`);
+  });
+
+  tx();
 }
 
 export function getPlayerBankAllocations(playerId: number) {
