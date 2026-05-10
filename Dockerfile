@@ -22,6 +22,7 @@ COPY --from=builder /app/next.config.js ./
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/middleware.ts ./
+COPY --from=builder /app/public ./public
 
 EXPOSE ${PORT:-3000}
 
