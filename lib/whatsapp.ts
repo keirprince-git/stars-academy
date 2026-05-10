@@ -6,7 +6,7 @@ const BANK_DETAILS = {
   account: "0010270588",
 };
 
-const COACH_PHONE = "08070777069";
+const COACH_PHONE = "080 7077 7069";
 
 export interface ChaseMessageParams {
   playerName: string;
@@ -36,8 +36,7 @@ export function buildChaseMessage({ playerName, balance, parentName }: ChaseMess
     ``,
     balanceLine,
     ``,
-    `To continue attending, please make a payment to:`,
-    ``,
+    `Please make a payment to:`,
     `Account Name: ${BANK_DETAILS.name}`,
     `Bank: ${BANK_DETAILS.bank}`,
     `Account Number: ${BANK_DETAILS.account}`,
