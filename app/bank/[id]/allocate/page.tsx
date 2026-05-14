@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { getBankTransaction, getBankAllocations, getPlayers, addBankAllocation, removeBankAllocation } from "@/lib/db";
-import { getCurrentTariff } from "@/lib/tariff";
+import { getEffectiveTariff } from "@/lib/tariff";
 import { guessPlayers } from "@/lib/match-player";
 import { redirect } from "next/navigation";
 
@@ -40,6 +40,9 @@ export default async function AllocatePage({
   for (const p of players) {
     playerGroups[p.id] = p.source === "Lower" ? "Lower" : "Upper";
   }
+
+  // Resolve the tariff (with fallback) so the package dropdown can be populated
+  const effectiveTariff = getEffectiveTariff();
 
   /* ── Server actions ──────────────────────────────────── */
 
@@ -191,6 +194,19 @@ export default async function AllocatePage({
               )}
             </div>
 
+            {effectiveTariff.packages.length === 0 && (
+              <div className="alert alert-warning">
+                No tariff packages are configured, so only a custom amount can be entered.
+                Add packages in <a href="/settings">Settings → Session Tariffs</a> to get the package picker.
+              </div>
+            )}
+            {effectiveTariff.packages.length > 0 && !effectiveTariff.isCurrent && (
+              <div className="alert alert-info">
+                No tariff set is dated on or before today — showing the {effectiveTariff.date} set as a fallback.
+                Set up a current-dated tariff in <a href="/settings">Settings → Session Tariffs</a>.
+              </div>
+            )}
+
             <div className="form-row">
               <div className="form-group">
                 <label htmlFor="package">Package</label>
@@ -262,7 +278,7 @@ export default async function AllocatePage({
       {/* ── Client-side tariff logic ────────────────────── */}
       <script dangerouslySetInnerHTML={{ __html: `
         (function() {
-          var tariff = ${JSON.stringify(getCurrentTariff())};
+          var tariff = ${JSON.stringify(effectiveTariff.packages)};
           var groups = ${JSON.stringify(playerGroups)};
           var remaining = ${remaining};
 
