@@ -1099,6 +1099,28 @@ export function ignoreBankTransaction(txnId: number, reason: string | null) {
     .run(reason, txnId);
 }
 
+/**
+ * Hard-delete a bank transaction. Refuses if it has player allocations or
+ * expense splits attached — those must be removed first, so deleting can
+ * never silently orphan a player session purchase or a categorisation.
+ */
+export function deleteBankTransaction(txnId: number) {
+  const d = db();
+  const allocCount = (d.prepare(
+    "SELECT COUNT(*) AS c FROM bank_allocations WHERE bank_transaction_id = ?"
+  ).get(txnId) as { c: number }).c;
+  const splitCount = (d.prepare(
+    "SELECT COUNT(*) AS c FROM bank_transaction_splits WHERE txn_id = ?"
+  ).get(txnId) as { c: number }).c;
+
+  if (allocCount > 0 || splitCount > 0) {
+    throw new Error(
+      "Cannot delete a transaction that has player allocations or expense splits. Remove those first."
+    );
+  }
+  d.prepare("DELETE FROM bank_transactions WHERE id = ?").run(txnId);
+}
+
 export function restoreBankTransaction(txnId: number) {
   const d = db();
   const tx = d.transaction(() => {

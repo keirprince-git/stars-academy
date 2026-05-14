@@ -5,6 +5,7 @@ import {
   insertBankTransactions,
   ignoreBankTransaction,
   restoreBankTransaction,
+  deleteBankTransaction,
   getBankAllocations,
   getSplitsByTxnIds,
   type TransactionSplit,
@@ -51,14 +52,15 @@ export default async function BankPage({
 
       const batch = `import-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
-      // Duplicate check: same date + balance
+      // Duplicate check: date + deposit + withdrawal + description. The balance
+      // figure is deliberately NOT used — an earlier parser version stored
+      // corrupted balances for withdrawal lines, which made balance-based dedup
+      // miss re-imported withdrawals. These four fields parse consistently.
       const existing = getBankTransactions();
-      const existingKeys = new Set(
-        existing.map((t) => `${t.trans_date}|${t.balance}`)
-      );
-      const newTxns = result.transactions.filter(
-        (t) => !existingKeys.has(`${t.trans_date}|${t.balance}`)
-      );
+      const dedupKey = (t: { trans_date: string; deposit: number; withdrawal: number; description: string }) =>
+        `${t.trans_date}|${t.deposit}|${t.withdrawal}|${t.description}`;
+      const existingKeys = new Set(existing.map(dedupKey));
+      const newTxns = result.transactions.filter((t) => !existingKeys.has(dedupKey(t)));
 
       if (newTxns.length === 0) {
         redirect("/bank?error=all_duplicates");
@@ -87,6 +89,19 @@ export default async function BankPage({
     const txnId = parseInt(formData.get("txn_id") as string, 10);
     restoreBankTransaction(txnId);
     redirect("/bank?success=restored");
+  };
+
+  const handleDelete = async (formData: FormData) => {
+    "use server";
+    const txnId = parseInt(formData.get("txn_id") as string, 10);
+    try {
+      deleteBankTransaction(txnId);
+      redirect("/bank?success=deleted");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      if (msg.includes("NEXT_REDIRECT")) throw e;
+      redirect(`/bank?error=${encodeURIComponent(msg)}`);
+    }
   };
 
   /* ── Data ────────────────────────────────────────────── */
@@ -122,9 +137,13 @@ export default async function BankPage({
           Imported {sp.count} transactions ({sp.skipped !== "0" ? `${sp.skipped} duplicates skipped` : "no duplicates"}).
         </div>
       )}
-      {(success === "ignored" || success === "restored" || success === "allocated" || success === "categorised") && (
+      {(success === "ignored" || success === "restored" || success === "allocated" || success === "categorised" || success === "deleted") && (
         <div className="alert alert-success">
-          {success === "ignored" ? "Transaction ignored." : success === "restored" ? "Transaction restored." : success === "categorised" ? "Category updated." : "Payment allocated."}
+          {success === "ignored" ? "Transaction ignored."
+            : success === "restored" ? "Transaction restored."
+            : success === "categorised" ? "Category updated."
+            : success === "deleted" ? "Transaction deleted."
+            : "Payment allocated."}
         </div>
       )}
       {error === "no_file" && (
@@ -138,6 +157,9 @@ export default async function BankPage({
       )}
       {error === "parse_failed" && (
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Parse error: {sp.msg}</div>
+      )}
+      {error && !["no_file", "no_transactions", "all_duplicates", "parse_failed"].includes(error) && (
+        <div className="error-msg" style={{ marginBottom: "0.75rem" }}>{decodeURIComponent(error)}</div>
       )}
 
       {/* Summary */}
@@ -246,8 +268,12 @@ export default async function BankPage({
             )}
             {transactions.map((t) => {
               const allocs = allocsByTxn[t.id] || [];
+              const splits = splitsByTxn[t.id] ?? [];
               const statusLabel = t.status === "partial" ? "partial" : t.status;
               const remaining = t.deposit - t.allocated_amount;
+              // A transaction can be hard-deleted only if nothing is attached
+              // to it — no player allocations, no expense splits.
+              const canDelete = allocs.length === 0 && splits.length === 0;
 
               return (
                 <tr key={t.id}>
@@ -314,8 +340,8 @@ export default async function BankPage({
                     )}
                     {t.status === "ignored" && (
                       <>
-                        <a href={`/bank/${t.id}/categorise`} className={`btn btn-sm ${(splitsByTxn[t.id] ?? []).length === 0 ? "btn-primary" : ""}`} style={{ marginLeft: "4px" }}>
-                          {(splitsByTxn[t.id] ?? []).length === 0 ? "Categorise" : "Edit splits"}
+                        <a href={`/bank/${t.id}/categorise`} className={`btn btn-sm ${splits.length === 0 ? "btn-primary" : ""}`} style={{ marginLeft: "4px" }}>
+                          {splits.length === 0 ? "Categorise" : "Edit splits"}
                         </a>
                         <form action={handleRestore} style={{ display: "inline" }}>
                           <input type="hidden" name="txn_id" value={t.id} />
@@ -324,6 +350,14 @@ export default async function BankPage({
                           </button>
                         </form>
                       </>
+                    )}
+                    {canDelete && (
+                      <form action={handleDelete} style={{ display: "inline" }}>
+                        <input type="hidden" name="txn_id" value={t.id} />
+                        <button type="submit" className="btn btn-sm btn-danger" style={{ marginLeft: "4px" }}>
+                          Delete
+                        </button>
+                      </form>
                     )}
                   </td>
                 </tr>
