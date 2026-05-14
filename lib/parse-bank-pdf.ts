@@ -118,7 +118,13 @@ export function parseBankStatementText(text: string): ParseResult {
   let prevBalance = bfMatch ? parseAmount(bfMatch[1]) : openingBalance;
 
   const transactions: ParsedTransaction[] = [];
-  const datePattern = /^(\d{2}-[A-Z]{3}-\d{2})\s+(\d{2}-[A-Z]{3}-\d{2})\s+\d{5}\s+/;
+
+  // TAJ Bank's PDF text extraction concatenates every column with no spaces:
+  //   11-FEB-2611-FEB-2600002THESTARS...0.0013.602,525,318.40
+  // So the prefix is transDate(DD-MMM-YY) + valueDate(DD-MMM-YY) + branch(5
+  // digits), optionally with whitespace between, and the line ends with three
+  // run-together amounts: deposit, withdrawal, balance.
+  const datePattern = /^(\d{2}-[A-Z]{3}-\d{2})\s*(\d{2}-[A-Z]{3}-\d{2})\s*(\d{5})\s*/i;
 
   for (const line of lines) {
     // Stop at end of statement
@@ -134,43 +140,28 @@ export function parseBankStatementText(text: string): ParseResult {
 
     const transDate = dateMatch[1];
     const valueDate = dateMatch[2];
+    const descStart = dateMatch[0].length;
 
-    // Extract the balance (last comma-formatted number in the line)
-    // Balance is always the rightmost number
-    const balanceMatch = line.match(/([\d,]+\.\d{2})\s*$/);
-    if (!balanceMatch) continue;
-    const balance = parseAmount(balanceMatch[1]);
+    // The three trailing amounts (deposit, withdrawal, balance) are always the
+    // last three amount tokens on the line. An amount-like token inside the
+    // description sorts before them, so taking the last three stays correct.
+    const amountMatches = [...line.matchAll(/\d[\d,]*\.\d{2}/g)];
+    if (amountMatches.length < 3) continue;
+    const last3 = amountMatches.slice(-3);
 
-    // Determine deposit vs withdrawal from balance change
+    let deposit = parseAmount(last3[0][0]);
+    let withdrawal = parseAmount(last3[1][0]);
+    const balance = parseAmount(last3[2][0]);
+    const descEnd = last3[0].index ?? line.length;
+
+    // Cross-check the parsed amounts against the balance movement. If they
+    // don't reconcile (a misread digit somewhere), trust the balance delta —
+    // that keeps a single bad line from corrupting deposit/withdrawal.
     const change = Math.round((balance - prevBalance) * 100) / 100;
-    let deposit = 0;
-    let withdrawal = 0;
-
-    if (change > 0) {
-      deposit = change;
-    } else if (change < 0) {
-      withdrawal = Math.abs(change);
-    }
-
-    // Extract description: between branch code and the numeric area at the end
-    // Find where branch (00002) ends
-    const branchIdx = line.indexOf("00002");
-    let descStart = branchIdx > 0 ? branchIdx + 5 : 0;
-
-    // Find where the trailing numbers start
-    // For clean lines: "...NIPReceivableAcc 40,000.00 0.00 2,170,332.00"
-    // For messy lines: "...THESTARS0F.0O0OTBALLACADEM7Y4L.8IM0ITED 2,130,332.00"
-    // The description ends where the clean amounts begin
-    // We'll try to match "deposit withdrawal balance" or just "balance" at the end
-
-    let descEnd = line.length;
-    // Try 3-number pattern: deposit withdrawal balance
-    const threeNumMatch = line.match(/([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$/);
-    if (threeNumMatch) {
-      descEnd = line.lastIndexOf(threeNumMatch[1]);
-    } else {
-      // Just balance at the end
-      descEnd = line.lastIndexOf(balanceMatch[1]);
+    const parsedChange = Math.round((deposit - withdrawal) * 100) / 100;
+    if (Math.abs(change - parsedChange) > 0.01) {
+      deposit = change > 0 ? change : 0;
+      withdrawal = change < 0 ? -change : 0;
     }
 
     const rawDesc = line.substring(descStart, descEnd).trim();
