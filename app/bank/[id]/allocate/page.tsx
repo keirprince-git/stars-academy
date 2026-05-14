@@ -3,6 +3,7 @@ import { getBankTransaction, getBankAllocations, getPlayers, addBankAllocation, 
 import { getEffectiveTariff } from "@/lib/tariff";
 import { guessPlayers } from "@/lib/match-player";
 import { redirect } from "next/navigation";
+import AllocationForm from "./AllocationForm";
 
 export default async function AllocatePage({
   params,
@@ -34,12 +35,6 @@ export default async function AllocatePage({
     ? guessPlayers(txn.description, txn.reference, players)
     : [];
   const bestGuess = guessedIds.length > 0 ? guessedIds[0] : null;
-
-  // Build player age-group lookup for client-side script
-  const playerGroups: Record<number, string> = {};
-  for (const p of players) {
-    playerGroups[p.id] = p.source === "Lower" ? "Lower" : "Upper";
-  }
 
   // Resolve the tariff (with fallback) so the package dropdown can be populated
   const effectiveTariff = getEffectiveTariff();
@@ -175,94 +170,28 @@ export default async function AllocatePage({
           <h2 style={{ marginBottom: "0.75rem" }}>
             {allocations.length > 0 ? "Add Another Player" : "Assign to Player"}
           </h2>
-          <form action={handleAllocate} id="allocForm">
-            <div className="form-group">
-              <label htmlFor="player_id">Player</label>
-              <select id="player_id" name="player_id" required style={{ maxWidth: "400px" }} defaultValue={bestGuess ?? ""}>
-                <option value="">— Select a player —</option>
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {guessedIds.includes(p.id) ? "★ " : ""}{p.code} — {p.name} ({p.source ?? "—"})
-                  </option>
-                ))}
-              </select>
-              <span id="playerGroup" className="text-dim" style={{ marginLeft: "0.5rem", fontSize: "0.85rem" }}></span>
-              {guessedIds.length > 0 && (
-                <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginTop: "0.25rem" }}>
-                  ★ Suggested based on transaction description
-                </div>
-              )}
+
+          {effectiveTariff.packages.length === 0 && (
+            <div className="alert alert-warning">
+              No tariff packages are configured, so only a custom amount can be entered.
+              Add packages in <a href="/settings">Settings → Session Tariffs</a> to get the package picker.
             </div>
-
-            {effectiveTariff.packages.length === 0 && (
-              <div className="alert alert-warning">
-                No tariff packages are configured, so only a custom amount can be entered.
-                Add packages in <a href="/settings">Settings → Session Tariffs</a> to get the package picker.
-              </div>
-            )}
-            {effectiveTariff.packages.length > 0 && !effectiveTariff.isCurrent && (
-              <div className="alert alert-info">
-                No tariff set is dated on or before today — showing the {effectiveTariff.date} set as a fallback.
-                Set up a current-dated tariff in <a href="/settings">Settings → Session Tariffs</a>.
-              </div>
-            )}
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="package">Package</label>
-                <select id="package" name="package" style={{ maxWidth: "280px" }}>
-                  <option value="">— Select package —</option>
-                  <option value="Custom">Custom amount</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="amount">Amount (₦)</label>
-                <input
-                  id="amount"
-                  name="amount"
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  max={remaining}
-                  defaultValue={remaining}
-                  required
-                  style={{ maxWidth: "150px" }}
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="sessions_purchased">Sessions</label>
-                <input
-                  id="sessions_purchased"
-                  name="sessions_purchased"
-                  type="number"
-                  min="1"
-                  required
-                  placeholder="e.g. 8"
-                  style={{ maxWidth: "120px" }}
-                />
-              </div>
+          )}
+          {effectiveTariff.packages.length > 0 && !effectiveTariff.isCurrent && (
+            <div className="alert alert-info">
+              No tariff set is dated on or before today — showing the {effectiveTariff.date} set as a fallback.
+              Set up a current-dated tariff in <a href="/settings">Settings → Session Tariffs</a>.
             </div>
+          )}
 
-            <div id="tariffHint" style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginBottom: "0.5rem", display: "none" }}></div>
-
-            <div className="form-group">
-              <label htmlFor="notes">Notes (optional)</label>
-              <input
-                id="notes"
-                name="notes"
-                type="text"
-                placeholder="e.g. Payment for Term 2"
-                style={{ maxWidth: "400px" }}
-              />
-            </div>
-
-            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-              <button type="submit" className="btn btn-primary">
-                Add Allocation
-              </button>
-              <a href="/bank" className="btn">Done</a>
-            </div>
-          </form>
+          <AllocationForm
+            players={players.map((p) => ({ id: p.id, code: p.code, name: p.name, source: p.source }))}
+            tariff={effectiveTariff.packages}
+            remaining={remaining}
+            guessedIds={guessedIds}
+            bestGuess={bestGuess}
+            handleAllocate={handleAllocate}
+          />
         </div>
       )}
 
@@ -274,91 +203,6 @@ export default async function AllocatePage({
           </div>
         </div>
       )}
-
-      {/* ── Client-side tariff logic ────────────────────── */}
-      <script dangerouslySetInnerHTML={{ __html: `
-        (function() {
-          var tariff = ${JSON.stringify(effectiveTariff.packages)};
-          var groups = ${JSON.stringify(playerGroups)};
-          var remaining = ${remaining};
-
-          var playerSel = document.getElementById('player_id');
-          var pkgSel = document.getElementById('package');
-          var amountEl = document.getElementById('amount');
-          var sessionsEl = document.getElementById('sessions_purchased');
-          var groupLabel = document.getElementById('playerGroup');
-          var hintEl = document.getElementById('tariffHint');
-
-          function getGroup() {
-            var pid = parseInt(playerSel.value);
-            return groups[pid] || 'Upper';
-          }
-
-          function rebuildPackages() {
-            var g = getGroup();
-            // Keep first two options (select + custom)
-            while (pkgSel.options.length > 2) pkgSel.remove(2);
-            tariff.forEach(function(t) {
-              var price = t.price[g];
-              var opt = document.createElement('option');
-              opt.value = t.label;
-              opt.textContent = t.label + ' — ₦' + price.toLocaleString();
-              if (price > remaining) {
-                opt.disabled = true;
-                opt.textContent += ' (exceeds remaining)';
-              }
-              pkgSel.appendChild(opt);
-            });
-            // Show age group label
-            if (playerSel.value) {
-              groupLabel.textContent = g + ' group';
-            } else {
-              groupLabel.textContent = '';
-            }
-          }
-
-          function onPackageChange() {
-            var g = getGroup();
-            var selected = pkgSel.value;
-            if (!selected || selected === 'Custom') {
-              amountEl.readOnly = false;
-              sessionsEl.readOnly = false;
-              hintEl.style.display = 'none';
-              return;
-            }
-            var match = tariff.find(function(t) { return t.label === selected; });
-            if (match) {
-              var price = match.price[g];
-              amountEl.value = price;
-              sessionsEl.value = match.sessions;
-              amountEl.readOnly = true;
-              sessionsEl.readOnly = true;
-              hintEl.textContent = '₦' + Math.round(price / match.sessions).toLocaleString() + ' per session (' + g + ' rate)';
-              hintEl.style.display = 'block';
-            }
-          }
-
-          playerSel.addEventListener('change', function() {
-            rebuildPackages();
-            // Reset package selection
-            pkgSel.value = '';
-            amountEl.value = remaining;
-            amountEl.readOnly = false;
-            sessionsEl.value = '';
-            sessionsEl.readOnly = false;
-            hintEl.style.display = 'none';
-          });
-
-          pkgSel.addEventListener('change', onPackageChange);
-
-          // Init — rebuild packages (and trigger if player pre-selected)
-          rebuildPackages();
-          if (playerSel.value) {
-            // Player was pre-selected by server guess — show group label
-            groupLabel.textContent = getGroup() + ' group';
-          }
-        })();
-      `}} />
     </>
   );
 }
