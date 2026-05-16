@@ -169,7 +169,8 @@ export function buildCancellationMessage({
 /**
  * Generate a kit-order invitation message for a parent.
  * Includes a personal link tied to their child's record so they can confirm
- * in one click. Decline option is also offered through the same page.
+ * in one click. The confirmation page also shows the bank details and
+ * payment instructions.
  */
 export function buildKitOrderMessage({
   playerName,
@@ -192,10 +193,10 @@ export function buildKitOrderMessage({
   lines.push("");
   lines.push(`The complete bundle (home shirt, away shirt, home shorts, away shorts) costs ₦${price.toLocaleString()}, and kits are available from ${availabilityDate}.`);
   lines.push("");
-  lines.push(`Please confirm whether you'd like to purchase the kit by clicking the link below:`);
+  lines.push(`The kits have been tailor-made for each player, so no sizing is needed. Please tap the link below to confirm your order:`);
   lines.push(link);
   lines.push("");
-  lines.push("The kits have been tailor-made for the players, so no sizing is needed — just confirm and we'll do the rest.");
+  lines.push(`Once confirmed, transfer ₦${price.toLocaleString()} to the academy account (details on the link) and send the payment confirmation to Coach Sunny. The kit will be ready for collection at the next training session.`);
   lines.push("");
   lines.push("Thank you!");
   return lines.join("\n");

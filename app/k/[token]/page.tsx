@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getKitOrderByToken, setKitOrderStatus } from "@/lib/db";
+import { getKitOrderByToken, setKitOrderStatus, getAllSettings } from "@/lib/db";
 import { KIT_LABEL, KIT_PRICE, KIT_ITEMS, KIT_AVAILABILITY_DATE } from "@/lib/kit";
 
 export const metadata = { title: "Stars Academy — Kit Confirmation" };
@@ -14,6 +14,7 @@ export default async function KitConfirmPage({
   const { token } = await params;
   const sp = await searchParams;
   const order = getKitOrderByToken(token);
+  const settings = getAllSettings();
 
   // Server actions ─────────────────────────────────
   async function handleConfirm() {
@@ -87,17 +88,47 @@ export default async function KitConfirmPage({
                 <h2>Confirmed — thank you!</h2>
                 <p>
                   We have your kit order for <strong>{order.player_name}</strong>.
-                  Coach Sunny will be in touch with payment and collection details.
+                  To complete your order, please transfer the payment using the bank details below
+                  and send the payment confirmation to Coach Sunny on WhatsApp.
+                </p>
+                <p className="state-extra-soft">
+                  Once we receive the confirmation, the kit will be ready for {order.player_name} to
+                  collect at the next training session.
                 </p>
                 {order.status === "paid" && (
-                  <p className="state-extra">Payment received — kit ready for collection.</p>
+                  <p className="state-extra">Payment received — kit ready for collection at the next session.</p>
                 )}
                 {order.status === "collected" && (
                   <p className="state-extra">Kit collected. Enjoy the new season!</p>
                 )}
-                <form action={handleReset}>
-                  <button type="submit" className="kit-link-btn">Changed your mind? Reset</button>
-                </form>
+              </div>
+            )}
+
+            {/* ── Payment details (shown whenever a confirmation is in play) ── */}
+            {order.status !== "declined" && (
+              <div className="kit-card kit-payment">
+                <h3>How to pay</h3>
+                <p className="pay-intro">
+                  Transfer <strong>₦{KIT_PRICE.toLocaleString()}</strong> to the academy account, then send
+                  proof of payment to Coach Sunny on WhatsApp.
+                </p>
+                <dl className="bank">
+                  <dt>Account name</dt>
+                  <dd>{settings.bank_name || "The Stars Football Academy"}</dd>
+                  <dt>Bank</dt>
+                  <dd>{settings.bank_bank || "Taj Bank"}</dd>
+                  <dt>Account number</dt>
+                  <dd className="account">{settings.bank_account || "0010270588"}</dd>
+                </dl>
+                <div className="coach-line">
+                  <span className="coach-label">Send payment confirmation to Coach Sunny:</span>
+                  <span className="coach-num">{settings.coach_phone || "0807 077 7069"}</span>
+                </div>
+                <p className="collect-note">
+                  Once Coach Sunny has confirmed payment, the kit will be ready for
+                  {order.status === "pending" ? " your child" : ` ${order.player_name}`} to collect
+                  at the next training session.
+                </p>
               </div>
             )}
 
@@ -105,9 +136,6 @@ export default async function KitConfirmPage({
               <div className="kit-card kit-state declined">
                 <h2>Marked as “not this season”</h2>
                 <p>No problem — we’ve recorded that {order.player_name} won’t be taking the kit this season.</p>
-                <form action={handleReset}>
-                  <button type="submit" className="kit-link-btn">Change your mind? Reset</button>
-                </form>
               </div>
             )}
 
@@ -127,6 +155,13 @@ export default async function KitConfirmPage({
                   </button>
                 </form>
               </div>
+            )}
+
+            {/* Reset link sits below the payment box once confirmed/declined */}
+            {(order.status === "confirmed" || order.status === "paid" || order.status === "collected" || order.status === "declined") && (
+              <form action={handleReset} style={{ textAlign: "center" }}>
+                <button type="submit" className="kit-link-btn">Changed your mind? Reset</button>
+              </form>
             )}
 
             {sp.action === "confirmed" && (
@@ -355,6 +390,78 @@ export default async function KitConfirmPage({
           margin-top: 0.5rem;
           font-weight: 600;
           color: var(--kit-success);
+        }
+        .kit-state .state-extra-soft {
+          margin-top: 0.5rem;
+          color: var(--kit-text-dim);
+          font-size: 0.9rem;
+        }
+
+        /* Payment block */
+        .kit-payment h3 {
+          font-size: 0.78rem;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: var(--kit-text-dim);
+          margin: 0 0 0.6rem;
+        }
+        .kit-payment .pay-intro {
+          margin: 0 0 0.85rem;
+          font-size: 0.95rem;
+          line-height: 1.4;
+        }
+        .kit-payment .bank {
+          background: #fff4ea;
+          border-left: 4px solid var(--kit-primary);
+          border-radius: 0 8px 8px 0;
+          padding: 0.75rem 1rem;
+          margin-bottom: 0.9rem;
+        }
+        .kit-payment .bank dt {
+          color: var(--kit-text-dim);
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          margin-top: 0.4rem;
+        }
+        .kit-payment .bank dt:first-child { margin-top: 0; }
+        .kit-payment .bank dd {
+          margin: 0;
+          font-weight: 700;
+          font-size: 1rem;
+        }
+        .kit-payment .bank dd.account {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+          font-size: 1.15rem;
+          letter-spacing: 0.06em;
+        }
+        .kit-payment .coach-line {
+          background: var(--kit-text);
+          color: white;
+          border-radius: 8px;
+          padding: 0.7rem 0.85rem;
+          margin-bottom: 0.85rem;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .kit-payment .coach-label {
+          font-size: 0.8rem;
+          opacity: 0.88;
+        }
+        .kit-payment .coach-num {
+          font-weight: 800;
+          font-size: 1.15rem;
+          color: var(--kit-primary);
+          letter-spacing: 0.04em;
+        }
+        .kit-payment .collect-note {
+          margin: 0;
+          font-size: 0.85rem;
+          line-height: 1.45;
+          color: var(--kit-text-dim);
+          font-style: italic;
         }
         .kit-link-btn {
           margin-top: 1rem;
