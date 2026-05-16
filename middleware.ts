@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
   need the cookie, and static assets pass through untouched.
 */
 
-const PUBLIC = ["/login", "/_next", "/favicon.ico"];
+const PUBLIC = ["/login", "/_next", "/favicon.ico", "/k/", "/Logo.JPG"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

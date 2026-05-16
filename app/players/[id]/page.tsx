@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
-import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions } from "@/lib/db";
+import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions, ensureKitOrdersForAllPlayers, getKitOrderForPlayer } from "@/lib/db";
 import { redirect } from "next/navigation";
-import { buildChaseMessage, buildTariffMessage, buildWhatsAppLink } from "@/lib/whatsapp";
+import { buildChaseMessage, buildTariffMessage, buildKitOrderMessage, buildWhatsAppLink } from "@/lib/whatsapp";
+import { KIT_YEAR, KIT_PRICE, KIT_AVAILABILITY_DATE, APP_BASE_URL } from "@/lib/kit";
 
 export default async function PlayerDetailPage({
   params,
@@ -21,6 +22,10 @@ export default async function PlayerDetailPage({
   const recentAtt  = getPlayerAttendance(player.id, 50);
   const purchases  = getPlayerPurchases(player.id);
   const bankAllocs = getPlayerBankAllocations(player.id);
+
+  // Ensure a kit order exists so we have a token to send the parent.
+  ensureKitOrdersForAllPlayers(KIT_YEAR);
+  const kitOrder = getKitOrderForPlayer(player.id, KIT_YEAR);
 
   /* ── Session balance ──────────────────────────────── */
   const totalPaid     = purchases.reduce((s, p) => s + p.sessions_purchased, 0);
@@ -154,6 +159,26 @@ export default async function PlayerDetailPage({
             style={{ alignSelf: "center", whiteSpace: "nowrap" }}
           >
             Chase Payment
+          </a>
+        )}
+        {isAdmin && player.parent_phone && kitOrder && (
+          <a
+            href={buildWhatsAppLink(
+              player.parent_phone,
+              buildKitOrderMessage({
+                playerName: player.name,
+                parentName: player.parent_name,
+                link: `${APP_BASE_URL}/k/${kitOrder.token}`,
+                price: KIT_PRICE,
+                availabilityDate: KIT_AVAILABILITY_DATE,
+              })
+            )}
+            target="_blank"
+            rel="noopener"
+            className="btn btn-sm"
+            style={{ alignSelf: "center", whiteSpace: "nowrap" }}
+          >
+            Send Kit Link
           </a>
         )}
       </div>

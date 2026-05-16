@@ -166,6 +166,21 @@ function ensureSchema(d: Database.Database) {
       created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS kit_orders (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+      kit_year      TEXT    NOT NULL,
+      token         TEXT    NOT NULL UNIQUE,
+      status        TEXT    NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending','confirmed','declined','paid','collected')),
+      confirmed_at  TEXT,
+      paid_at       TEXT,
+      collected_at  TEXT,
+      notes         TEXT,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(player_id, kit_year)
+    );
+
     CREATE TABLE IF NOT EXISTS tariff_packages (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       effective_from TEXT    NOT NULL,
@@ -198,6 +213,8 @@ function ensureSchema(d: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_ba_txn       ON bank_allocations(bank_transaction_id);
     CREATE INDEX IF NOT EXISTS idx_ba_player    ON bank_allocations(player_id);
     CREATE INDEX IF NOT EXISTS idx_splits_txn   ON bank_transaction_splits(txn_id);
+    CREATE INDEX IF NOT EXISTS idx_kit_player   ON kit_orders(player_id);
+    CREATE INDEX IF NOT EXISTS idx_kit_token    ON kit_orders(token);
   `);
 
   /* ── Data migration: backfill splits from legacy single-category field ─
@@ -1376,3 +1393,116 @@ export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
     uncategorisedCount: uncategorised.count,
   };
 }
+
+/* ── Kit orders ──────────────────────────────────────
+   One row per (player, kit_year). Status flows
+   pending → confirmed/declined → paid → collected. */
+
+export type KitOrderStatus = 'pending' | 'confirmed' | 'declined' | 'paid' | 'collected';
+
+export interface KitOrder {
+  id: number;
+  player_id: number;
+  kit_year: string;
+  token: string;
+  status: KitOrderStatus;
+  confirmed_at: string | null;
+  paid_at: string | null;
+  collected_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface KitOrderRow extends KitOrder {
+  player_code: string;
+  player_name: string;
+  parent_name: string | null;
+  parent_phone: string | null;
+}
+
+/**
+ * Make sure every active player has a kit_orders row for the given year.
+ * Idempotent — only inserts where one doesn't already exist.
+ */
+export function ensureKitOrdersForAllPlayers(kitYear: string) {
+  const d = db();
+  const missing = d.prepare(
+    `SELECT p.id FROM players p
+     WHERE NOT EXISTS (
+       SELECT 1 FROM kit_orders k WHERE k.player_id = p.id AND k.kit_year = ?
+     )`
+  ).all(kitYear) as Array<{ id: number }>;
+
+  if (missing.length === 0) return;
+
+  const insert = d.prepare(
+    "INSERT INTO kit_orders (player_id, kit_year, token) VALUES (?, ?, ?)"
+  );
+  const tx = d.transaction((rows: typeof missing) => {
+    for (const r of rows) {
+      const token = crypto.randomBytes(16).toString("hex");
+      insert.run(r.id, kitYear, token);
+    }
+  });
+  tx(missing);
+}
+
+export function getAllKitOrders(kitYear: string): KitOrderRow[] {
+  return db().prepare(
+    `SELECT k.*, p.code AS player_code, p.name AS player_name,
+            p.parent_name, p.parent_phone
+     FROM kit_orders k
+     JOIN players p ON p.id = k.player_id
+     WHERE k.kit_year = ?
+     ORDER BY p.play_status = 'Active' DESC, p.name COLLATE NOCASE`
+  ).all(kitYear) as KitOrderRow[];
+}
+
+export function getKitOrderByToken(token: string): KitOrderRow | undefined {
+  return db().prepare(
+    `SELECT k.*, p.code AS player_code, p.name AS player_name,
+            p.parent_name, p.parent_phone
+     FROM kit_orders k
+     JOIN players p ON p.id = k.player_id
+     WHERE k.token = ?`
+  ).get(token) as KitOrderRow | undefined;
+}
+
+export function getKitOrderForPlayer(playerId: number, kitYear: string): KitOrder | undefined {
+  return db().prepare(
+    "SELECT * FROM kit_orders WHERE player_id = ? AND kit_year = ?"
+  ).get(playerId, kitYear) as KitOrder | undefined;
+}
+
+export function setKitOrderStatus(orderId: number, status: KitOrderStatus) {
+  const d = db();
+  // Set the appropriate timestamp when transitioning to confirmed/paid/collected.
+  // Don't clear earlier stamps when moving forward — keep the audit trail.
+  if (status === 'confirmed') {
+    d.prepare(
+      "UPDATE kit_orders SET status = ?, confirmed_at = COALESCE(confirmed_at, datetime('now')) WHERE id = ?"
+    ).run(status, orderId);
+  } else if (status === 'paid') {
+    d.prepare(
+      "UPDATE kit_orders SET status = ?, paid_at = COALESCE(paid_at, datetime('now')), confirmed_at = COALESCE(confirmed_at, datetime('now')) WHERE id = ?"
+    ).run(status, orderId);
+  } else if (status === 'collected') {
+    d.prepare(
+      "UPDATE kit_orders SET status = ?, collected_at = COALESCE(collected_at, datetime('now')), paid_at = COALESCE(paid_at, datetime('now')), confirmed_at = COALESCE(confirmed_at, datetime('now')) WHERE id = ?"
+    ).run(status, orderId);
+  } else if (status === 'declined') {
+    d.prepare(
+      "UPDATE kit_orders SET status = ?, confirmed_at = NULL, paid_at = NULL, collected_at = NULL WHERE id = ?"
+    ).run(status, orderId);
+  } else {
+    // pending — reset stamps
+    d.prepare(
+      "UPDATE kit_orders SET status = 'pending', confirmed_at = NULL, paid_at = NULL, collected_at = NULL WHERE id = ?"
+    ).run(orderId);
+  }
+}
+
+export function setKitOrderNotes(orderId: number, notes: string | null) {
+  db().prepare("UPDATE kit_orders SET notes = ? WHERE id = ?").run(notes, orderId);
+}
+

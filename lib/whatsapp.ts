@@ -167,6 +167,41 @@ export function buildCancellationMessage({
 }
 
 /**
+ * Generate a kit-order invitation message for a parent.
+ * Includes a personal link tied to their child's record so they can confirm
+ * in one click. Decline option is also offered through the same page.
+ */
+export function buildKitOrderMessage({
+  playerName,
+  parentName,
+  link,
+  price,
+  availabilityDate,
+}: {
+  playerName: string;
+  parentName?: string | null;
+  link: string;
+  price: number;
+  availabilityDate: string;
+}): string {
+  const parentFirst = parentName ? parentName.split(/\s+/)[0] : "there";
+  const lines: string[] = [];
+  lines.push(`Hi ${parentFirst},`);
+  lines.push("");
+  lines.push(`The new Stars Academy kit is ready for ${playerName}!`);
+  lines.push("");
+  lines.push(`The complete bundle (home shirt, away shirt, home shorts, away shorts) costs ₦${price.toLocaleString()}, and kits are available from ${availabilityDate}.`);
+  lines.push("");
+  lines.push(`Please confirm whether you'd like to purchase the kit by clicking the link below:`);
+  lines.push(link);
+  lines.push("");
+  lines.push("The kits have been tailor-made for the players, so no sizing is needed — just confirm and we'll do the rest.");
+  lines.push("");
+  lines.push("Thank you!");
+  return lines.join("\n");
+}
+
+/**
  * Build a wa.me URL with pre-populated message.
  * phone should be in international format (e.g. +2348070777069)
  * or local format (e.g. 08070777069) — we strip non-digits.
