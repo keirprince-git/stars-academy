@@ -2,6 +2,11 @@ import { requireAuth } from "@/lib/auth";
 import { getCategories, addCategory, updateCategory, deleteCategory } from "@/lib/db";
 import { redirect } from "next/navigation";
 
+/** Derive a URL-safe category code from a human label. */
+function slugify(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+}
+
 export default async function CategoriesPage({
   searchParams,
 }: {
@@ -23,12 +28,23 @@ export default async function CategoriesPage({
 
   const handleAdd = async (formData: FormData) => {
     "use server";
-    const value = (formData.get("value") as string).trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
     const label = (formData.get("label") as string).trim();
     const type = formData.get("type") as "income" | "expense";
 
-    if (!value || !label || !type) {
+    if (!label || !type) {
       redirect("/accounts/categories?error=invalid");
+    }
+
+    // Derive code from label, with auto-suffix if the slug already exists.
+    const base = slugify(label);
+    if (!base) {
+      redirect("/accounts/categories?error=invalid");
+    }
+    const existing = new Set(getCategories().map((c) => c.value));
+    let value = base;
+    let n = 2;
+    while (existing.has(value)) {
+      value = `${base}_${n++}`;
     }
 
     try {
@@ -191,7 +207,7 @@ export default async function CategoriesPage({
           <div className="form-row" style={{ alignItems: "flex-end" }}>
             <div className="form-group">
               <label htmlFor="label">Label</label>
-              <input id="label" name="label" type="text" required placeholder="e.g. Transport" style={{ maxWidth: "200px" }} />
+              <input id="label" name="label" type="text" required placeholder="e.g. Transport" style={{ maxWidth: "240px" }} />
             </div>
             <div className="form-group">
               <label htmlFor="type">Type</label>
@@ -200,15 +216,11 @@ export default async function CategoriesPage({
                 <option value="expense">Expense</option>
               </select>
             </div>
-            <div className="form-group">
-              <label htmlFor="value">Code (auto-generated)</label>
-              <input id="value" name="value" type="text" required placeholder="e.g. transport" style={{ maxWidth: "160px" }} />
-              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                Lowercase, underscores only
-              </div>
-            </div>
             <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Add</button>
           </div>
+          <p className="text-dim" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
+            A short internal code is generated automatically from the label.
+          </p>
         </form>
       </div>
     </>
