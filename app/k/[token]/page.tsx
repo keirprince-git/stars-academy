@@ -15,6 +15,9 @@ export default async function KitConfirmPage({
   const sp = await searchParams;
   const order = getKitOrderByToken(token);
   const settings = getAllSettings();
+  // A kit marked free keeps its gifted_at stamp even after it's collected,
+  // so we treat it as a free kit throughout (no payment instructions).
+  const wasGifted = !!order?.gifted_at;
 
   // Server actions ─────────────────────────────────
   async function handleConfirm() {
@@ -81,8 +84,8 @@ export default async function KitConfirmPage({
               </p>
             </div>
 
-            {/* ── Confirmation state ──────────────────────── */}
-            {(order.status === "confirmed" || order.status === "paid" || order.status === "collected") && (
+            {/* ── Confirmation state (paid flow) ──────────── */}
+            {!wasGifted && (order.status === "confirmed" || order.status === "paid" || order.status === "collected") && (
               <div className="kit-card kit-state confirmed">
                 <div className="state-icon">✓</div>
                 <h2>Confirmed — thank you!</h2>
@@ -104,8 +107,23 @@ export default async function KitConfirmPage({
               </div>
             )}
 
-            {/* ── Payment details (shown whenever a confirmation is in play) ── */}
-            {order.status !== "declined" && (
+            {/* ── Gifted state (free kit, incl. once collected) ── */}
+            {wasGifted && (
+              <div className="kit-card kit-state confirmed">
+                <div className="state-icon">✓</div>
+                <h2>Kit provided free</h2>
+                <p>
+                  The academy is providing {order.player_name}’s kit free of charge —
+                  no payment is needed.
+                  {order.status === "collected"
+                    ? " Kit collected — enjoy the new season!"
+                    : " It will be ready to collect at the next training session."}
+                </p>
+              </div>
+            )}
+
+            {/* ── Payment details (shown whenever payment may be required) ── */}
+            {order.status !== "declined" && !wasGifted && (
               <div className="kit-card kit-payment">
                 <h3>How to pay</h3>
                 <p className="pay-intro">
@@ -157,8 +175,8 @@ export default async function KitConfirmPage({
               </div>
             )}
 
-            {/* Reset link sits below the payment box once confirmed/declined */}
-            {(order.status === "confirmed" || order.status === "paid" || order.status === "collected" || order.status === "declined") && (
+            {/* Reset link sits below once the order is in a settled state */}
+            {(order.status === "confirmed" || order.status === "paid" || order.status === "gifted" || order.status === "collected" || order.status === "declined") && (
               <form action={handleReset} style={{ textAlign: "center" }}>
                 <button type="submit" className="kit-link-btn">Changed your mind? Reset</button>
               </form>

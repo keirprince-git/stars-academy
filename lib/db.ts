@@ -52,6 +52,43 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: widen kit_orders status to allow 'gifted' + add gifted_at ──
+     SQLite can't alter a CHECK constraint in place, so recreate the table
+     (preserving data) when the existing definition predates 'gifted'. */
+  try {
+    const row = d.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='kit_orders'"
+    ).get() as { sql: string } | undefined;
+    if (row && row.sql && !row.sql.includes("'gifted'")) {
+      d.exec(`
+        CREATE TABLE kit_orders_new (
+          id            INTEGER PRIMARY KEY AUTOINCREMENT,
+          player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+          kit_year      TEXT    NOT NULL,
+          token         TEXT    NOT NULL UNIQUE,
+          status        TEXT    NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','confirmed','declined','paid','gifted','collected')),
+          confirmed_at  TEXT,
+          paid_at       TEXT,
+          gifted_at     TEXT,
+          collected_at  TEXT,
+          notes         TEXT,
+          created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(player_id, kit_year)
+        );
+        INSERT INTO kit_orders_new
+          (id, player_id, kit_year, token, status, confirmed_at, paid_at, collected_at, notes, created_at)
+          SELECT id, player_id, kit_year, token, status, confirmed_at, paid_at, collected_at, notes, created_at
+          FROM kit_orders;
+        DROP TABLE kit_orders;
+        ALTER TABLE kit_orders_new RENAME TO kit_orders;
+        CREATE INDEX IF NOT EXISTS idx_kit_player ON kit_orders(player_id);
+        CREATE INDEX IF NOT EXISTS idx_kit_token  ON kit_orders(token);
+      `);
+      console.log("[stars-academy] Migrated kit_orders to support 'gifted' status");
+    }
+  } catch { /* table doesn't exist yet — fine, CREATE TABLE handles it */ }
+
   /* ── Migration: add categorised_at / categorised_by to bank_transactions ── */
   try {
     const cols = d.prepare("PRAGMA table_info(bank_transactions)").all() as Array<{ name: string }>;
@@ -172,9 +209,10 @@ function ensureSchema(d: Database.Database) {
       kit_year      TEXT    NOT NULL,
       token         TEXT    NOT NULL UNIQUE,
       status        TEXT    NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','confirmed','declined','paid','collected')),
+                    CHECK (status IN ('pending','confirmed','declined','paid','gifted','collected')),
       confirmed_at  TEXT,
       paid_at       TEXT,
+      gifted_at     TEXT,
       collected_at  TEXT,
       notes         TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -1398,7 +1436,7 @@ export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
    One row per (player, kit_year). Status flows
    pending → confirmed/declined → paid → collected. */
 
-export type KitOrderStatus = 'pending' | 'confirmed' | 'declined' | 'paid' | 'collected';
+export type KitOrderStatus = 'pending' | 'confirmed' | 'declined' | 'paid' | 'gifted' | 'collected';
 
 export interface KitOrder {
   id: number;
@@ -1408,6 +1446,7 @@ export interface KitOrder {
   status: KitOrderStatus;
   confirmed_at: string | null;
   paid_at: string | null;
+  gifted_at: string | null;
   collected_at: string | null;
   notes: string | null;
   created_at: string;
@@ -1476,29 +1515,38 @@ export function getKitOrderForPlayer(playerId: number, kitYear: string): KitOrde
 
 export function setKitOrderStatus(orderId: number, status: KitOrderStatus) {
   const d = db();
-  // Set the appropriate timestamp when transitioning to confirmed/paid/collected.
-  // Don't clear earlier stamps when moving forward — keep the audit trail.
-  if (status === 'confirmed') {
-    d.prepare(
-      "UPDATE kit_orders SET status = ?, confirmed_at = COALESCE(confirmed_at, datetime('now')) WHERE id = ?"
-    ).run(status, orderId);
-  } else if (status === 'paid') {
-    d.prepare(
-      "UPDATE kit_orders SET status = ?, paid_at = COALESCE(paid_at, datetime('now')), confirmed_at = COALESCE(confirmed_at, datetime('now')) WHERE id = ?"
-    ).run(status, orderId);
-  } else if (status === 'collected') {
-    d.prepare(
-      "UPDATE kit_orders SET status = ?, collected_at = COALESCE(collected_at, datetime('now')), paid_at = COALESCE(paid_at, datetime('now')), confirmed_at = COALESCE(confirmed_at, datetime('now')) WHERE id = ?"
-    ).run(status, orderId);
-  } else if (status === 'declined') {
-    d.prepare(
-      "UPDATE kit_orders SET status = ?, confirmed_at = NULL, paid_at = NULL, collected_at = NULL WHERE id = ?"
-    ).run(status, orderId);
-  } else {
-    // pending — reset stamps
-    d.prepare(
-      "UPDATE kit_orders SET status = 'pending', confirmed_at = NULL, paid_at = NULL, collected_at = NULL WHERE id = ?"
-    ).run(orderId);
+  // Each transition stamps its own timestamp. 'paid' and 'gifted' are mutually
+  // exclusive (a kit is either sold or given free), so setting one clears the other.
+  switch (status) {
+    case 'confirmed':
+      d.prepare(
+        "UPDATE kit_orders SET status='confirmed', confirmed_at=COALESCE(confirmed_at, datetime('now')) WHERE id=?"
+      ).run(orderId);
+      break;
+    case 'paid':
+      d.prepare(
+        "UPDATE kit_orders SET status='paid', paid_at=COALESCE(paid_at, datetime('now')), gifted_at=NULL, confirmed_at=COALESCE(confirmed_at, datetime('now')) WHERE id=?"
+      ).run(orderId);
+      break;
+    case 'gifted':
+      d.prepare(
+        "UPDATE kit_orders SET status='gifted', gifted_at=COALESCE(gifted_at, datetime('now')), paid_at=NULL, confirmed_at=COALESCE(confirmed_at, datetime('now')) WHERE id=?"
+      ).run(orderId);
+      break;
+    case 'collected':
+      d.prepare(
+        "UPDATE kit_orders SET status='collected', collected_at=COALESCE(collected_at, datetime('now')), confirmed_at=COALESCE(confirmed_at, datetime('now')) WHERE id=?"
+      ).run(orderId);
+      break;
+    case 'declined':
+      d.prepare(
+        "UPDATE kit_orders SET status='declined', confirmed_at=NULL, paid_at=NULL, gifted_at=NULL, collected_at=NULL WHERE id=?"
+      ).run(orderId);
+      break;
+    default: // pending — reset stamps
+      d.prepare(
+        "UPDATE kit_orders SET status='pending', confirmed_at=NULL, paid_at=NULL, gifted_at=NULL, collected_at=NULL WHERE id=?"
+      ).run(orderId);
   }
 }
 

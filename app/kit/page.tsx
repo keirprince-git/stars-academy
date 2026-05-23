@@ -36,6 +36,7 @@ export default async function KitOrdersPage({
     pending: allOrders.filter((o) => o.status === "pending").length,
     confirmed: allOrders.filter((o) => o.status === "confirmed").length,
     paid: allOrders.filter((o) => o.status === "paid").length,
+    gifted: allOrders.filter((o) => o.status === "gifted").length,
     collected: allOrders.filter((o) => o.status === "collected").length,
     declined: allOrders.filter((o) => o.status === "declined").length,
   };
@@ -86,6 +87,10 @@ export default async function KitOrdersPage({
         <a href="/kit?status=paid" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value" style={{ color: "var(--success)" }}>{counts.paid}</span>
           <span className="chip-label">Paid</span>
+        </a>
+        <a href="/kit?status=gifted" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
+          <span className="chip-value" style={{ color: "#5a3296" }}>{counts.gifted}</span>
+          <span className="chip-label">Free</span>
         </a>
         <a href="/kit?status=collected" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value" style={{ color: "var(--success)" }}>{counts.collected}</span>
@@ -147,7 +152,11 @@ export default async function KitOrdersPage({
                     {o.confirmed_at ? o.confirmed_at.slice(0, 10) : "—"}
                   </td>
                   <td className="text-dim" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>
-                    {o.paid_at ? o.paid_at.slice(0, 10) : "—"}
+                    {o.paid_at
+                      ? o.paid_at.slice(0, 10)
+                      : o.gifted_at
+                      ? `Free · ${o.gifted_at.slice(0, 10)}`
+                      : "—"}
                   </td>
                   <td className="text-dim" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>
                     {o.collected_at ? o.collected_at.slice(0, 10) : "—"}
@@ -167,12 +176,15 @@ export default async function KitOrdersPage({
                       <StatusBtn orderId={o.id} status="confirmed" label="Mark confirmed" action={handleSetStatus} />
                     )}
                     {o.status === "confirmed" && (
-                      <StatusBtn orderId={o.id} status="paid" label="Mark paid" action={handleSetStatus} primary />
+                      <>
+                        <StatusBtn orderId={o.id} status="paid" label="Mark paid" action={handleSetStatus} primary />
+                        <StatusBtn orderId={o.id} status="gifted" label="Mark free" action={handleSetStatus} />
+                      </>
                     )}
-                    {o.status === "paid" && (
+                    {(o.status === "paid" || o.status === "gifted") && (
                       <StatusBtn orderId={o.id} status="collected" label="Mark collected" action={handleSetStatus} primary />
                     )}
-                    {(o.status === "confirmed" || o.status === "paid" || o.status === "collected" || o.status === "declined") && (
+                    {(o.status === "confirmed" || o.status === "paid" || o.status === "gifted" || o.status === "collected" || o.status === "declined") && (
                       <StatusBtn orderId={o.id} status="pending" label="Reset" action={handleSetStatus} />
                     )}
                   </td>
@@ -215,6 +227,7 @@ function statusPillClass(status: KitOrderStatus): string {
     case "pending":   return "pill pill-muted";
     case "confirmed": return "pill pill-warning";
     case "paid":      return "pill pill-success";
+    case "gifted":    return "pill pill-scholar";
     case "collected": return "pill pill-success";
     case "declined":  return "pill pill-danger";
   }
@@ -225,6 +238,7 @@ function labelForStatus(status: KitOrderStatus): string {
     case "pending":   return "Pending";
     case "confirmed": return "Confirmed";
     case "paid":      return "Paid";
+    case "gifted":    return "Free";
     case "collected": return "Collected";
     case "declined":  return "Declined";
   }
