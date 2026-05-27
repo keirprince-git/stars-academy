@@ -1135,13 +1135,14 @@ export function removeBankAllocation(allocationId: number) {
   if (!alloc) throw new Error("Allocation not found");
 
   const tx = d.transaction(() => {
-    // Delete the linked sessions_purchased record
+    // Delete the allocation FIRST — it has a FK to sessions_purchased(id)
+    // via purchase_id, so the linked purchase row can't go until the
+    // allocation that references it is gone (foreign_keys = ON enforces this).
+    d.prepare("DELETE FROM bank_allocations WHERE id = ?").run(allocationId);
     if (alloc.purchase_id) {
       d.prepare("DELETE FROM sessions_purchased WHERE id = ?").run(alloc.purchase_id);
     }
-    // Delete the allocation
-    d.prepare("DELETE FROM bank_allocations WHERE id = ?").run(allocationId);
-    // Recalculate status
+    // Recalculate the parent transaction's status (unallocated / partial / allocated)
     refreshTxnStatus(d, alloc.bank_transaction_id);
   });
 
