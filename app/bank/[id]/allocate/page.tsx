@@ -1,9 +1,14 @@
 import { requireAuth } from "@/lib/auth";
-import { getBankTransaction, getBankAllocations, getPlayers, addBankAllocation, removeBankAllocation } from "@/lib/db";
+import {
+  getBankTransaction, getBankAllocations, getPlayers,
+  addBankAllocation, addBankKitPayment, removeBankAllocation,
+  ensureKitOrdersForAllPlayers, getAllKitOrders,
+} from "@/lib/db";
 import { getEffectiveTariff } from "@/lib/tariff";
 import { guessPlayers } from "@/lib/match-player";
 import { redirect } from "next/navigation";
 import AllocationForm from "./AllocationForm";
+import { KIT_YEAR, KIT_PRICE } from "@/lib/kit";
 
 export default async function AllocatePage({
   params,
@@ -39,22 +44,41 @@ export default async function AllocatePage({
   // Resolve the tariff (with fallback) so the package dropdown can be populated
   const effectiveTariff = getEffectiveTariff();
 
+  // Kit orders per player — lets the form show whether each player already has
+  // a paid kit, is confirmed, or hasn't acted yet.
+  ensureKitOrdersForAllPlayers(KIT_YEAR);
+  const kitOrders = getAllKitOrders(KIT_YEAR);
+  const kitOrdersByPlayer: Record<number, { orderId: number; status: string }> = {};
+  for (const k of kitOrders) {
+    kitOrdersByPlayer[k.player_id] = { orderId: k.id, status: k.status };
+  }
+
   /* ── Server actions ──────────────────────────────────── */
 
   const handleAllocate = async (formData: FormData) => {
     "use server";
+    const kind = (formData.get("kind") as string) || "session";
     const playerId = parseInt(formData.get("player_id") as string, 10);
-    const sessions = parseInt(formData.get("sessions_purchased") as string, 10);
     const amount = parseFloat(formData.get("amount") as string);
-    const packageName = (formData.get("package") as string) || null;
     const notes = (formData.get("notes") as string) || null;
 
-    if (!playerId || isNaN(sessions) || sessions <= 0 || isNaN(amount) || amount <= 0) {
+    if (!playerId || isNaN(amount) || amount <= 0) {
       redirect(`/bank/${txnId}/allocate?error=invalid`);
     }
 
     try {
-      addBankAllocation(txnId, playerId, amount, sessions, packageName, notes);
+      if (kind === "kit") {
+        const kitOrderId = parseInt(formData.get("kit_order_id") as string, 10);
+        if (!kitOrderId) redirect(`/bank/${txnId}/allocate?error=no_kit_order`);
+        addBankKitPayment(txnId, playerId, amount, kitOrderId, notes);
+      } else {
+        const sessions = parseInt(formData.get("sessions_purchased") as string, 10);
+        const packageName = (formData.get("package") as string) || null;
+        if (isNaN(sessions) || sessions <= 0) {
+          redirect(`/bank/${txnId}/allocate?error=invalid`);
+        }
+        addBankAllocation(txnId, playerId, amount, sessions, packageName, notes);
+      }
       redirect(`/bank/${txnId}/allocate?success=added`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
@@ -96,7 +120,10 @@ export default async function AllocatePage({
       {sp.error === "invalid" && (
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Please fill in all required fields.</div>
       )}
-      {sp.error && sp.error !== "invalid" && (
+      {sp.error === "no_kit_order" && (
+        <div className="error-msg" style={{ marginBottom: "0.75rem" }}>No kit order found for that player.</div>
+      )}
+      {sp.error && !["invalid", "no_kit_order"].includes(sp.error) && (
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>{sp.error}</div>
       )}
 
@@ -190,6 +217,8 @@ export default async function AllocatePage({
             remaining={remaining}
             guessedIds={guessedIds}
             bestGuess={bestGuess}
+            kitPrice={KIT_PRICE}
+            kitOrdersByPlayer={kitOrdersByPlayer}
             handleAllocate={handleAllocate}
           />
         </div>

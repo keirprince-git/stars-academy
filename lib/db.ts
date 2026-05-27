@@ -52,6 +52,19 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: add kind + kit_order_id to bank_allocations ──
+     Lets a deposit be allocated as a kit payment, not just session fees.
+     Existing rows default to kind='session', preserving current behaviour. */
+  try {
+    const cols = d.prepare("PRAGMA table_info(bank_allocations)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "kind")) {
+      d.exec("ALTER TABLE bank_allocations ADD COLUMN kind TEXT NOT NULL DEFAULT 'session'");
+    }
+    if (cols.length > 0 && !cols.some(c => c.name === "kit_order_id")) {
+      d.exec("ALTER TABLE bank_allocations ADD COLUMN kit_order_id INTEGER");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   /* ── Migration: widen kit_orders status to allow 'gifted' + add gifted_at ──
      SQLite can't alter a CHECK constraint in place, so recreate the table
      (preserving data) when the existing definition predates 'gifted'. */
@@ -190,6 +203,9 @@ function ensureSchema(d: Database.Database) {
       sessions_purchased    INTEGER NOT NULL DEFAULT 0,
       package               TEXT,
       purchase_id           INTEGER REFERENCES sessions_purchased(id),
+      kind                  TEXT    NOT NULL DEFAULT 'session'
+                            CHECK (kind IN ('session','kit')),
+      kit_order_id          INTEGER,
       notes                 TEXT,
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
@@ -1129,9 +1145,46 @@ export function addBankAllocation(
   tx();
 }
 
+/**
+ * Record a kit payment: links a bank deposit to a player's kit order, marks
+ * that kit order as paid, and counts the amount as Kit sales income (rather
+ * than session_fees) in the Accounts.
+ */
+export function addBankKitPayment(
+  txnId: number,
+  playerId: number,
+  amount: number,
+  kitOrderId: number,
+  notes: string | null,
+) {
+  const txn = getBankTransaction(txnId);
+  if (!txn) throw new Error("Transaction not found");
+  if (txn.status === "allocated" || txn.status === "ignored") {
+    throw new Error("Transaction is already fully allocated or ignored");
+  }
+
+  const d = db();
+  const tx = d.transaction(() => {
+    // Kit allocation row — no sessions_purchased created (no session credit).
+    d.prepare(
+      `INSERT INTO bank_allocations
+         (bank_transaction_id, player_id, amount, sessions_purchased, package, purchase_id, kind, kit_order_id, notes)
+       VALUES (?, ?, ?, 0, 'Kit', NULL, 'kit', ?, ?)`
+    ).run(txnId, playerId, amount, kitOrderId, notes);
+
+    // Move the kit order to 'paid' (sets paid_at, clears any gifted_at, fills confirmed_at if not set).
+    setKitOrderStatus(kitOrderId, 'paid');
+
+    // Refresh the parent transaction's status
+    refreshTxnStatus(d, txnId);
+  });
+
+  tx();
+}
+
 export function removeBankAllocation(allocationId: number) {
   const d = db();
-  const alloc = d.prepare("SELECT * FROM bank_allocations WHERE id = ?").get(allocationId) as BankAllocation | undefined;
+  const alloc = d.prepare("SELECT * FROM bank_allocations WHERE id = ?").get(allocationId) as BankAllocation & { kind?: string; kit_order_id?: number | null } | undefined;
   if (!alloc) throw new Error("Allocation not found");
 
   const tx = d.transaction(() => {
@@ -1141,6 +1194,11 @@ export function removeBankAllocation(allocationId: number) {
     d.prepare("DELETE FROM bank_allocations WHERE id = ?").run(allocationId);
     if (alloc.purchase_id) {
       d.prepare("DELETE FROM sessions_purchased WHERE id = ?").run(alloc.purchase_id);
+    }
+    // If this was a kit payment, revert the linked kit order back to 'confirmed'
+    // (it must have been confirmed to be paid; admin can fully reset in /kit if needed).
+    if (alloc.kind === 'kit' && alloc.kit_order_id) {
+      setKitOrderStatus(alloc.kit_order_id, 'confirmed');
     }
     // Recalculate the parent transaction's status (unallocated / partial / allocated)
     refreshTxnStatus(d, alloc.bank_transaction_id);
@@ -1354,20 +1412,24 @@ export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
 
   const dateWhere = dateConditions.length > 0 ? " AND " + dateConditions.join(" AND ") : "";
 
-  // Session fees: sum of allocated amounts (player fee income, unchanged)
-  const sessionFeesWhere = opts?.from || opts?.to
-    ? "WHERE allocated_amount > 0" + (opts?.from ? " AND trans_date >= ?" : "") + (opts?.to ? " AND trans_date <= ?" : "")
-    : "WHERE allocated_amount > 0";
-  const sessionFeesParams: (string | number)[] = [];
-  if (opts?.from) sessionFeesParams.push(opts.from);
-  if (opts?.to) sessionFeesParams.push(opts.to);
-
-  const sessionFees = d
+  // Player-allocated income, split by allocation kind:
+  //   kind='session' → Session fees income line
+  //   kind='kit'     → Kit sales income line (combined with any splits below)
+  const allocBreakdown = d
     .prepare(
-      `SELECT COALESCE(SUM(allocated_amount), 0) AS total, COUNT(*) AS count
-       FROM bank_transactions ${sessionFeesWhere}`
+      `SELECT
+         COALESCE(SUM(CASE WHEN a.kind = 'session' THEN a.amount ELSE 0 END), 0) AS session_total,
+         COUNT(CASE WHEN a.kind = 'session' THEN 1 END) AS session_count,
+         COALESCE(SUM(CASE WHEN a.kind = 'kit' THEN a.amount ELSE 0 END), 0) AS kit_total,
+         COUNT(CASE WHEN a.kind = 'kit' THEN 1 END) AS kit_count
+       FROM bank_allocations a
+       JOIN bank_transactions bt ON bt.id = a.bank_transaction_id
+       WHERE 1=1 ${dateWhere}`
     )
-    .get(...sessionFeesParams) as { total: number; count: number };
+    .get(...dateParams) as { session_total: number; session_count: number; kit_total: number; kit_count: number };
+
+  const sessionFees = { total: allocBreakdown.session_total, count: allocBreakdown.session_count };
+  const kitFromAllocations = { total: allocBreakdown.kit_total, count: allocBreakdown.kit_count };
 
   // Aggregated splits joined with the parent transaction (for date filtering
   // and to know whether the parent is a deposit or withdrawal). One split row
@@ -1415,6 +1477,19 @@ export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
       income.push({ category: row.category, total: row.total, count: row.count });
     } else {
       expenses.push({ category: row.category, total: row.total, count: row.count });
+    }
+  }
+
+  // Kit payments via bank_allocations (kind='kit') feed into the same "kit_sales"
+  // income line. If a kit_sales split already exists for the period (from the
+  // legacy ignore+categorise flow), combine into one line rather than two.
+  if (kitFromAllocations.total > 0) {
+    const existingKit = income.find((l) => l.category === "kit_sales");
+    if (existingKit) {
+      existingKit.total += kitFromAllocations.total;
+      existingKit.count += kitFromAllocations.count;
+    } else {
+      income.push({ category: "kit_sales", total: kitFromAllocations.total, count: kitFromAllocations.count });
     }
   }
 
