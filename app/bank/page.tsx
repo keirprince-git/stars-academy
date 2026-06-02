@@ -269,11 +269,26 @@ export default async function BankPage({
             {transactions.map((t) => {
               const allocs = allocsByTxn[t.id] || [];
               const splits = splitsByTxn[t.id] ?? [];
-              const statusLabel = t.status === "partial" ? "partial" : t.status;
               const remaining = t.deposit - t.allocated_amount;
               // A transaction can be hard-deleted only if nothing is attached
               // to it — no player allocations, no expense splits.
               const canDelete = allocs.length === 0 && splits.length === 0;
+
+              // "ignored" status means "not a player payment" — but the txn may
+              // still have been categorised into expense/other-income via splits.
+              // Distinguish those two cases in the pill so the table doesn't
+              // mislabel categorised transactions as just "ignored".
+              const isCategorised = t.status === "ignored" && splits.length > 0;
+              const statusLabel =
+                t.status === "partial" ? "partial" :
+                isCategorised           ? "categorised" :
+                t.status;
+              const statusPillClass =
+                t.status === "allocated" ? "pill pill-success" :
+                t.status === "partial"   ? "pill pill-warning" :
+                isCategorised            ? "pill pill-success" :
+                t.status === "ignored"   ? "pill pill-muted" :
+                                           "pill pill-warning";
 
               return (
                 <tr key={t.id}>
@@ -288,14 +303,7 @@ export default async function BankPage({
                     {t.withdrawal > 0 ? `₦${t.withdrawal.toLocaleString()}` : ""}
                   </td>
                   <td>
-                    <span className={
-                      t.status === "allocated" ? "pill pill-success" :
-                      t.status === "partial"   ? "pill pill-warning" :
-                      t.status === "ignored"   ? "pill pill-muted" :
-                                                 "pill pill-warning"
-                    }>
-                      {statusLabel}
-                    </span>
+                    <span className={statusPillClass}>{statusLabel}</span>
                   </td>
                   <td style={{ fontSize: "0.85rem" }}>
                     {allocs.length > 0 && (
