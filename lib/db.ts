@@ -1412,24 +1412,48 @@ export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
 
   const dateWhere = dateConditions.length > 0 ? " AND " + dateConditions.join(" AND ") : "";
 
-  // Player-allocated income, split by allocation kind:
-  //   kind='session' → Session fees income line
-  //   kind='kit'     → Kit sales income line (combined with any splits below)
-  const allocBreakdown = d
+  // Player-allocated income.
+  //
+  // We use bank_transactions.allocated_amount as the source of truth for the
+  // total allocated figure — that's what the Bank page summary uses too, so
+  // the two screens stay consistent. Then we subtract any allocations that
+  // were specifically kit payments (kind='kit') so they flow to Kit sales
+  // instead of Session fees.
+  //
+  // This is more robust than summing bank_allocations.amount directly: it
+  // matches whatever the rest of the app considers "allocated", and is
+  // resilient to any historical divergence between allocated_amount and
+  // SUM(bank_allocations.amount).
+  const totalAllocWhere = "WHERE allocated_amount > 0"
+    + (opts?.from ? " AND trans_date >= ?" : "")
+    + (opts?.to   ? " AND trans_date <= ?" : "");
+  const totalAllocParams: (string | number)[] = [];
+  if (opts?.from) totalAllocParams.push(opts.from);
+  if (opts?.to)   totalAllocParams.push(opts.to);
+
+  const totalAlloc = d
     .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN a.kind = 'session' THEN a.amount ELSE 0 END), 0) AS session_total,
-         COUNT(CASE WHEN a.kind = 'session' THEN 1 END) AS session_count,
-         COALESCE(SUM(CASE WHEN a.kind = 'kit' THEN a.amount ELSE 0 END), 0) AS kit_total,
-         COUNT(CASE WHEN a.kind = 'kit' THEN 1 END) AS kit_count
+      `SELECT COALESCE(SUM(allocated_amount), 0) AS total, COUNT(*) AS count
+       FROM bank_transactions ${totalAllocWhere}`
+    )
+    .get(...totalAllocParams) as { total: number; count: number };
+
+  const kitAlloc = d
+    .prepare(
+      `SELECT COALESCE(SUM(a.amount), 0) AS total, COUNT(*) AS count
        FROM bank_allocations a
        JOIN bank_transactions bt ON bt.id = a.bank_transaction_id
-       WHERE 1=1 ${dateWhere}`
+       WHERE a.kind = 'kit' ${dateWhere}`
     )
-    .get(...dateParams) as { session_total: number; session_count: number; kit_total: number; kit_count: number };
+    .get(...dateParams) as { total: number; count: number };
 
-  const sessionFees = { total: allocBreakdown.session_total, count: allocBreakdown.session_count };
-  const kitFromAllocations = { total: allocBreakdown.kit_total, count: allocBreakdown.kit_count };
+  // session_fees = total allocated minus kit allocations
+  const sessionFeesTotal = Math.round((totalAlloc.total - kitAlloc.total) * 100) / 100;
+  const sessionFees = {
+    total: sessionFeesTotal > 0 ? sessionFeesTotal : 0,
+    count: Math.max(totalAlloc.count - kitAlloc.count, 0),
+  };
+  const kitFromAllocations = { total: kitAlloc.total, count: kitAlloc.count };
 
   // Aggregated splits joined with the parent transaction (for date filtering
   // and to know whether the parent is a deposit or withdrawal). One split row
