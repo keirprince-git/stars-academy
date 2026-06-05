@@ -242,7 +242,14 @@ export default async function PlayerDetailPage({
               </div>
               <div className="form-group">
                 <label>Age Group</label>
-                <input name="source" type="text" defaultValue={player.source ?? ""} />
+                <select name="source" defaultValue={player.source ?? ""}>
+                  <option value="">— Select —</option>
+                  <option value="Upper">Upper</option>
+                  <option value="Lower">Lower</option>
+                  {player.source && !["Upper", "Lower"].includes(player.source) && (
+                    <option value={player.source}>{player.source}</option>
+                  )}
+                </select>
               </div>
               <div className="form-group">
                 <label>Play Status</label>

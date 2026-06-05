@@ -42,7 +42,11 @@ export default async function NewPlayerPage() {
           <div className="form-row">
             <div className="form-group">
               <label>Age Group</label>
-              <input name="source" type="text" />
+              <select name="source" defaultValue="">
+                <option value="">— Select —</option>
+                <option value="Upper">Upper</option>
+                <option value="Lower">Lower</option>
+              </select>
             </div>
           </div>
           <div className="form-row">
