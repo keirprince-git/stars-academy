@@ -30,6 +30,7 @@ export default async function BankPage({
   const sp = await searchParams;
   const statusFilter = sp.status ?? "all";
   const search = sp.search ?? "";
+  const batchFilter = sp.batch ?? "";
   const success = sp.success;
   const error = sp.error;
 
@@ -111,9 +112,11 @@ export default async function BankPage({
   const summary = getBankTransactionSummary();
   const recon = getBankReconciliation();
   const batches = getBankImportBatches();
+  const activeBatch = batchFilter ? batches.find((b) => b.batch === batchFilter) : null;
   const transactions = getBankTransactions({
     status: statusFilter,
     search: search || undefined,
+    batch: batchFilter || undefined,
   });
 
   // Pre-load allocations for each transaction that has them
@@ -288,10 +291,13 @@ export default async function BankPage({
                   const delta = prev ? Math.round((b.opening - prev.closing) * 100) / 100 : 0;
                   const overlaps = prev ? b.firstDate <= prev.lastDate : false;
                   const continuous = prev ? Math.abs(delta) <= 0.01 : true;
+                  const isActive = b.batch === batchFilter;
                   return (
-                    <tr key={b.batch}>
+                    <tr key={b.batch} style={isActive ? { background: "var(--peach, #fff3e8)" } : {}}>
                       <td style={{ whiteSpace: "nowrap" }}>{b.importedAt ?? "—"}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>{b.firstDate} → {b.lastDate}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <a href={`/bank?batch=${encodeURIComponent(b.batch)}`}>{b.firstDate} → {b.lastDate}</a>
+                      </td>
                       <td className="text-right">{b.rowCount}</td>
                       <td className="text-right" style={{ color: b.net >= 0 ? "var(--success)" : "var(--danger)" }}>
                         {b.net < 0 ? "-" : ""}₦{Math.abs(b.net).toLocaleString()}
@@ -342,6 +348,7 @@ export default async function BankPage({
       {/* Filters */}
       <div className="card" style={{ marginBottom: "1rem" }}>
         <form method="GET" action="/bank">
+          {batchFilter && <input type="hidden" name="batch" value={batchFilter} />}
           <div className="form-row" style={{ alignItems: "flex-end" }}>
             <div className="form-group">
               <label htmlFor="status">Status</label>
@@ -360,6 +367,30 @@ export default async function BankPage({
           </div>
         </form>
       </div>
+
+      {/* Active batch-filter banner */}
+      {batchFilter && (
+        <div
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "6px",
+            padding: "0.6rem 0.85rem",
+            marginBottom: "0.75rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "1rem",
+            fontSize: "0.9rem",
+          }}
+        >
+          <span>
+            Showing {transactions.length} row{transactions.length === 1 ? "" : "s"} from one import
+            {activeBatch?.importedAt ? ` (imported ${activeBatch.importedAt})` : ""}
+            {activeBatch ? ` covering ${activeBatch.firstDate} → ${activeBatch.lastDate}` : ""}.
+          </span>
+          <a href="/bank" className="btn btn-sm">Clear filter</a>
+        </div>
+      )}
 
       {/* Transaction table */}
       <div className="card" style={{ padding: 0, overflow: "auto" }}>
