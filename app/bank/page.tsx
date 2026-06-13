@@ -4,6 +4,8 @@ import {
   getBankTransactionSummary,
   getBankReconciliation,
   getBankImportBatches,
+  previewBatchPurge,
+  purgeUnattachedInBatch,
   insertBankTransactions,
   ignoreBankTransaction,
   restoreBankTransaction,
@@ -107,12 +109,25 @@ export default async function BankPage({
     }
   };
 
+  const handleBulkPurge = async (formData: FormData) => {
+    "use server";
+    const batch = (formData.get("batch") as string) || "";
+    const cutoff = (formData.get("cutoff") as string) || "";
+    if (!batch || !cutoff) {
+      redirect("/bank");
+    }
+    const n = purgeUnattachedInBatch(batch, cutoff);
+    redirect(`/bank?batch=${encodeURIComponent(batch)}&success=purged&count=${n}`);
+  };
+
   /* ── Data ────────────────────────────────────────────── */
 
   const summary = getBankTransactionSummary();
   const recon = getBankReconciliation();
   const batches = getBankImportBatches();
   const activeBatch = batchFilter ? batches.find((b) => b.batch === batchFilter) : null;
+  const purgeCutoff = batchFilter ? (sp.purgeBefore ?? "") : "";
+  const purgePreview = batchFilter && purgeCutoff ? previewBatchPurge(batchFilter, purgeCutoff) : null;
   const transactions = getBankTransactions({
     status: statusFilter,
     search: search || undefined,
@@ -142,6 +157,11 @@ export default async function BankPage({
       {success === "imported" && (
         <div className="alert alert-success">
           Imported {sp.count} transactions ({sp.skipped !== "0" ? `${sp.skipped} duplicates skipped` : "no duplicates"}).
+        </div>
+      )}
+      {success === "purged" && (
+        <div className="alert alert-success">
+          Removed {sp.count} unattached transaction{sp.count === "1" ? "" : "s"} from the import. Clear the filter to see the updated reconciliation.
         </div>
       )}
       {(success === "ignored" || success === "restored" || success === "allocated" || success === "categorised" || success === "deleted") && (
@@ -376,19 +396,69 @@ export default async function BankPage({
             borderRadius: "6px",
             padding: "0.6rem 0.85rem",
             marginBottom: "0.75rem",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "1rem",
             fontSize: "0.9rem",
           }}
         >
-          <span>
-            Showing {transactions.length} row{transactions.length === 1 ? "" : "s"} from one import
-            {activeBatch?.importedAt ? ` (imported ${activeBatch.importedAt})` : ""}
-            {activeBatch ? ` covering ${activeBatch.firstDate} → ${activeBatch.lastDate}` : ""}.
-          </span>
-          <a href="/bank" className="btn btn-sm">Clear filter</a>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
+            <span>
+              Showing {transactions.length} row{transactions.length === 1 ? "" : "s"} from one import
+              {activeBatch?.importedAt ? ` (imported ${activeBatch.importedAt})` : ""}
+              {activeBatch ? ` covering ${activeBatch.firstDate} → ${activeBatch.lastDate}` : ""}.
+            </span>
+            <a href="/bank" className="btn btn-sm">Clear filter</a>
+          </div>
+
+          {!purgePreview ? (
+            <form
+              method="GET"
+              action="/bank"
+              style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}
+            >
+              <input type="hidden" name="batch" value={batchFilter} />
+              <span className="text-dim">Remove unattached rows in this import dated on or before</span>
+              <input type="date" name="purgeBefore" defaultValue={purgeCutoff} required />
+              <button type="submit" className="btn btn-sm">Preview removal</button>
+            </form>
+          ) : (
+            <div style={{ marginTop: "0.6rem", borderTop: "1px solid var(--border)", paddingTop: "0.6rem" }}>
+              {purgePreview.deletableCount === 0 ? (
+                <p style={{ margin: 0 }}>
+                  No unattached rows dated on or before {purgeCutoff} in this import.
+                  {purgePreview.skippedCount > 0 && ` (${purgePreview.skippedCount} attached row${purgePreview.skippedCount === 1 ? "" : "s"} would be kept.)`}{" "}
+                  <a href={`/bank?batch=${encodeURIComponent(batchFilter)}`}>Cancel</a>
+                </p>
+              ) : (
+                <>
+                  <p style={{ margin: "0 0 0.4rem" }}>
+                    <strong style={{ color: "var(--danger)" }}>Confirm removal.</strong>{" "}
+                    This will permanently delete <strong>{purgePreview.deletableCount}</strong> unattached row
+                    {purgePreview.deletableCount === 1 ? "" : "s"} dated on or before {purgeCutoff} (removing ₦
+                    {purgePreview.removeDeposits.toLocaleString()} of deposits and ₦
+                    {purgePreview.removeWithdrawals.toLocaleString()} of withdrawals).
+                    {purgePreview.skippedCount > 0 &&
+                      ` ${purgePreview.skippedCount} attached row${purgePreview.skippedCount === 1 ? "" : "s"} will be kept:`}
+                  </p>
+                  {purgePreview.skipped.length > 0 && (
+                    <ul className="text-dim" style={{ margin: "0 0 0.5rem", paddingLeft: "1.2rem" }}>
+                      {purgePreview.skipped.map((s) => (
+                        <li key={s.id}>{s.trans_date} — {s.description} ({s.reason})</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <form action={handleBulkPurge} style={{ display: "inline" }}>
+                      <input type="hidden" name="batch" value={batchFilter} />
+                      <input type="hidden" name="cutoff" value={purgeCutoff} />
+                      <button type="submit" className="btn btn-sm btn-danger">
+                        Delete {purgePreview.deletableCount} row{purgePreview.deletableCount === 1 ? "" : "s"}
+                      </button>
+                    </form>
+                    <a href={`/bank?batch=${encodeURIComponent(batchFilter)}`} className="btn btn-sm">Cancel</a>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 

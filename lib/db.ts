@@ -1235,6 +1235,79 @@ export function deleteBankTransaction(txnId: number) {
   d.prepare("DELETE FROM bank_transactions WHERE id = ?").run(txnId);
 }
 
+/**
+ * Preview a bulk purge of one import batch up to a cutoff date. Returns how many
+ * rows would be deleted (unattached: no player allocations, no category splits)
+ * and which would be skipped because they ARE attached — so nothing with player
+ * history or accounts impact is ever removed. Read-only.
+ */
+export function previewBatchPurge(batch: string, cutoff: string) {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const rows = db()
+    .prepare(
+      `SELECT bt.id, bt.trans_date, bt.description, bt.deposit, bt.withdrawal,
+              (SELECT COUNT(*) FROM bank_allocations ba WHERE ba.bank_transaction_id = bt.id) AS alloc,
+              (SELECT COUNT(*) FROM bank_transaction_splits s WHERE s.txn_id = bt.id) AS splits
+       FROM bank_transactions bt
+       WHERE bt.import_batch = @batch AND bt.trans_date <= @cutoff
+       ORDER BY bt.trans_date ASC, bt.id ASC`
+    )
+    .all({ batch, cutoff }) as Array<{
+      id: number;
+      trans_date: string;
+      description: string;
+      deposit: number;
+      withdrawal: number;
+      alloc: number;
+      splits: number;
+    }>;
+
+  const deletable = rows.filter((r) => r.alloc === 0 && r.splits === 0);
+  const skipped = rows
+    .filter((r) => r.alloc > 0 || r.splits > 0)
+    .map((r) => ({
+      id: r.id,
+      trans_date: r.trans_date,
+      description: r.description,
+      reason: r.alloc > 0 ? "allocated to a player" : "has a category split",
+    }));
+
+  return {
+    batch,
+    cutoff,
+    totalInRange: rows.length,
+    deletableCount: deletable.length,
+    skippedCount: skipped.length,
+    removeDeposits: round2(deletable.reduce((s, r) => s + r.deposit, 0)),
+    removeWithdrawals: round2(deletable.reduce((s, r) => s + r.withdrawal, 0)),
+    skipped,
+  };
+}
+
+/**
+ * Permanently delete the unattached rows (no allocations, no splits) of one
+ * import batch dated on or before the cutoff. Mirrors deleteBankTransaction's
+ * guard, applied in bulk inside a transaction. Returns the number deleted.
+ */
+export function purgeUnattachedInBatch(batch: string, cutoff: string): number {
+  const d = db();
+  const ids = d
+    .prepare(
+      `SELECT bt.id FROM bank_transactions bt
+       WHERE bt.import_batch = @batch AND bt.trans_date <= @cutoff
+         AND NOT EXISTS (SELECT 1 FROM bank_allocations ba WHERE ba.bank_transaction_id = bt.id)
+         AND NOT EXISTS (SELECT 1 FROM bank_transaction_splits s WHERE s.txn_id = bt.id)`
+    )
+    .all({ batch, cutoff }) as Array<{ id: number }>;
+
+  const del = d.prepare("DELETE FROM bank_transactions WHERE id = ?");
+  const tx = d.transaction((rows: Array<{ id: number }>) => {
+    for (const r of rows) del.run(r.id);
+  });
+  tx(ids);
+  return ids.length;
+}
+
 export function restoreBankTransaction(txnId: number) {
   const d = db();
   const tx = d.transaction(() => {
