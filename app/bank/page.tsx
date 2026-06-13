@@ -215,7 +215,7 @@ export default async function BankPage({
 
       {/* Reconciliation */}
       {recon.hasData && (
-        <details className="card" open={!recon.reconciled} style={{ marginBottom: "1rem" }}>
+        <details className="card" open={!recon.reconciled && !batchFilter} style={{ marginBottom: "1rem" }}>
           <summary style={{ cursor: "pointer", fontWeight: 600 }}>
             Reconciliation:{" "}
             {recon.reconciled ? (
@@ -268,7 +268,7 @@ export default async function BankPage({
 
       {/* Import history */}
       {batches.length > 0 && (
-        <details className="card" style={{ marginBottom: "1rem" }}>
+        <details className="card" open={!!batchFilter} style={{ marginBottom: "1rem" }}>
           <summary style={{ cursor: "pointer", fontWeight: 600 }}>
             Import history ({batches.length} statement{batches.length === 1 ? "" : "s"})
           </summary>
