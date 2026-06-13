@@ -1334,7 +1334,12 @@ export function getBankTransactionSummary() {
          COUNT(*) AS total,
          COUNT(CASE WHEN status='unallocated' OR status='partial' THEN 1 END) AS unallocated,
          COUNT(CASE WHEN status='allocated' THEN 1 END) AS allocated,
-         COUNT(CASE WHEN status='ignored' THEN 1 END) AS ignored,
+         COUNT(CASE WHEN status='ignored'
+                AND EXISTS (SELECT 1 FROM bank_transaction_splits s WHERE s.txn_id = bank_transactions.id)
+               THEN 1 END) AS categorised,
+         COUNT(CASE WHEN status='ignored'
+                AND NOT EXISTS (SELECT 1 FROM bank_transaction_splits s WHERE s.txn_id = bank_transactions.id)
+               THEN 1 END) AS ignored,
          COALESCE(SUM(CASE WHEN (status='unallocated' OR status='partial') AND deposit > 0 THEN deposit - allocated_amount END), 0) AS unallocated_amount,
          COALESCE(SUM(allocated_amount), 0) AS total_allocated_amount
        FROM bank_transactions`
@@ -1343,6 +1348,7 @@ export function getBankTransactionSummary() {
     total: number;
     unallocated: number;
     allocated: number;
+    categorised: number;
     ignored: number;
     unallocated_amount: number;
     total_allocated_amount: number;

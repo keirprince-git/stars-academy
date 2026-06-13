@@ -209,6 +209,10 @@ export default async function BankPage({
           <span className="chip-label">Allocated</span>
         </div>
         <div className="chip">
+          <span className="chip-value">{summary.categorised}</span>
+          <span className="chip-label">Categorised</span>
+        </div>
+        <div className="chip">
           <span className="chip-value">{summary.ignored}</span>
           <span className="chip-label">Ignored</span>
         </div>
