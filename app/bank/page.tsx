@@ -57,13 +57,18 @@ export default async function BankPage({
 
       const batch = `import-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
-      // Duplicate check: date + deposit + withdrawal + description. The balance
-      // figure is deliberately NOT used — an earlier parser version stored
-      // corrupted balances for withdrawal lines, which made balance-based dedup
-      // miss re-imported withdrawals. These four fields parse consistently.
+      // Duplicate check: date + the bank's running balance (in kobo). Statements
+      // here are cumulative, so every upload overlaps the previous ones — the
+      // dedup is the control that stops re-importing what's already loaded. The
+      // balance is the bank's own figure: identical for a given transaction on
+      // every statement and effectively unique per line, so it dedups reliably
+      // regardless of how TAJ's concatenated description parses. (Balance was
+      // previously avoided because an old parser corrupted some withdrawal-line
+      // balances; that parser is fixed and the data has been reconciled end-to-
+      // end, so the stored balances are now trustworthy.)
       const existing = getBankTransactions();
-      const dedupKey = (t: { trans_date: string; deposit: number; withdrawal: number; description: string }) =>
-        `${t.trans_date}|${t.deposit}|${t.withdrawal}|${t.description}`;
+      const dedupKey = (t: { trans_date: string; balance: number }) =>
+        `${t.trans_date}|${Math.round(t.balance * 100)}`;
       const existingKeys = new Set(existing.map(dedupKey));
       const newTxns = result.transactions.filter((t) => !existingKeys.has(dedupKey(t)));
 
