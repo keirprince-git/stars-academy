@@ -2,6 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import {
   getBankTransactions,
   getBankTransactionSummary,
+  getBankReconciliation,
   insertBankTransactions,
   ignoreBankTransaction,
   restoreBankTransaction,
@@ -107,6 +108,7 @@ export default async function BankPage({
   /* ── Data ────────────────────────────────────────────── */
 
   const summary = getBankTransactionSummary();
+  const recon = getBankReconciliation();
   const transactions = getBankTransactions({
     status: statusFilter,
     search: search || undefined,
@@ -205,6 +207,59 @@ export default async function BankPage({
           </div>
         )}
       </div>
+
+      {/* Reconciliation */}
+      {recon.hasData && (
+        <details className="card" open={!recon.reconciled} style={{ marginBottom: "1rem" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+            Reconciliation:{" "}
+            {recon.reconciled ? (
+              <span style={{ color: "var(--success)" }}>Reconciled ✓</span>
+            ) : (
+              <span style={{ color: "var(--danger)" }}>
+                Discrepancy ₦{Math.abs(recon.discrepancy).toLocaleString()} · {recon.breaks.length} break{recon.breaks.length === 1 ? "" : "s"}
+              </span>
+            )}
+          </summary>
+          <div style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
+            <p className="text-dim" style={{ marginBottom: recon.breaks.length > 0 ? "0.75rem" : 0 }}>
+              Opening ₦{recon.anchorBalance.toLocaleString()} ({recon.anchorDate}) + net movement{" "}
+              ₦{(recon.expectedLatest - recon.anchorBalance).toLocaleString()} = expected{" "}
+              ₦{recon.expectedLatest.toLocaleString()}. Latest statement balance{" "}
+              ₦{recon.actualLatest.toLocaleString()} ({recon.actualDate}).
+            </p>
+            {recon.breaks.length > 0 && (
+              <>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th className="text-right">Expected balance</th>
+                      <th className="text-right">Statement balance</th>
+                      <th className="text-right">Gap</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recon.breaks.map((b, i) => (
+                      <tr key={i}>
+                        <td style={{ whiteSpace: "nowrap" }}>{b.date}</td>
+                        <td className="text-right">₦{b.expected.toLocaleString()}</td>
+                        <td className="text-right">₦{b.actual.toLocaleString()}</td>
+                        <td className="text-right" style={{ color: "var(--danger)", fontWeight: 500 }}>
+                          {b.gap > 0 ? "+" : "-"}₦{Math.abs(b.gap).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-dim" style={{ marginTop: "0.5rem" }}>
+                  A gap is a balance jump with no transaction to explain it — usually a missing statement, a duplicated import, or a deleted/misread row.
+                </p>
+              </>
+            )}
+          </div>
+        </details>
+      )}
 
       {/* Upload */}
       <div className="card" style={{ marginBottom: "1rem" }}>

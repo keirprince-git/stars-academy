@@ -1290,6 +1290,109 @@ export function getBankTransactionSummary() {
   };
 }
 
+/**
+ * Bank statement reconciliation. Checks that the running balance printed on the
+ * imported statements forms one unbroken chain: the latest balance should equal
+ * the opening balance of the imported history plus the net of every deposit and
+ * withdrawal.
+ *
+ * Works purely off the stored `balance` column (the bank's own running balance,
+ * which the parser treats as source of truth). Breaks are localised per date,
+ * with same-day movements netted so intra-day rows stored out of posting order
+ * don't raise false flags. What remains is a balance jump unexplained by any
+ * transaction — the signature of a missing statement, a duplicated import, or a
+ * deleted/misread row. The per-break gaps sum to the headline discrepancy.
+ */
+export function getBankReconciliation() {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const rows = db()
+    .prepare(
+      `SELECT id, trans_date, deposit, withdrawal, balance
+       FROM bank_transactions
+       ORDER BY trans_date ASC, id ASC`
+    )
+    .all() as Array<{
+      id: number;
+      trans_date: string;
+      deposit: number;
+      withdrawal: number;
+      balance: number;
+    }>;
+
+  if (rows.length === 0) {
+    return {
+      hasData: false,
+      reconciled: true,
+      anchorBalance: 0,
+      anchorDate: "",
+      expectedLatest: 0,
+      actualLatest: 0,
+      actualDate: "",
+      discrepancy: 0,
+      breaks: [] as Array<{ date: string; expected: number; actual: number; gap: number }>,
+    };
+  }
+
+  // Opening balance of the imported history = balance just before the first row.
+  const first = rows[0];
+  const anchorBalance = round2(first.balance - (first.deposit - first.withdrawal));
+  const anchorDate = first.trans_date;
+
+  // Latest row matches the "Bank balance" chip (max trans_date, then max id).
+  const last = rows[rows.length - 1];
+  const actualLatest = last.balance;
+  const actualDate = last.trans_date;
+
+  const netMovement = round2(
+    rows.reduce((s, r) => s + (r.deposit - r.withdrawal), 0)
+  );
+  const expectedLatest = round2(anchorBalance + netMovement);
+  const discrepancy = round2(actualLatest - expectedLatest);
+
+  // Collapse to one entry per date. Rows are id-ascending within a date, so the
+  // last row of each date carries that date's closing balance.
+  const days: Array<{ date: string; movement: number; close: number }> = [];
+  for (let i = 0; i < rows.length; ) {
+    const date = rows[i].trans_date;
+    let movement = 0;
+    let close = rows[i].balance;
+    let j = i;
+    while (j < rows.length && rows[j].trans_date === date) {
+      movement += rows[j].deposit - rows[j].withdrawal;
+      close = rows[j].balance;
+      j++;
+    }
+    days.push({ date, movement: round2(movement), close });
+    i = j;
+  }
+
+  // Walk the daily chain, re-baselining to each day's stated closing balance so a
+  // single gap surfaces as a single break rather than cascading down the chain.
+  const breaks: Array<{ date: string; expected: number; actual: number; gap: number }> = [];
+  let entry = anchorBalance;
+  for (const d of days) {
+    const expected = round2(entry + d.movement);
+    const gap = round2(d.close - expected);
+    if (Math.abs(gap) > 0.01) {
+      breaks.push({ date: d.date, expected, actual: d.close, gap });
+    }
+    entry = d.close;
+  }
+
+  return {
+    hasData: true,
+    reconciled: breaks.length === 0,
+    anchorBalance,
+    anchorDate,
+    expectedLatest,
+    actualLatest,
+    actualDate,
+    discrepancy,
+    breaks,
+  };
+}
+
 /* ── Category management ───────────────────────────── */
 
 export function setCategoryForTransaction(txnId: number, category: string | null) {
