@@ -206,22 +206,22 @@ export default async function BankPage({
         </div>
         <div className="chip">
           <span className="chip-value">{summary.allocated}</span>
-          <span className="chip-label">Allocated</span>
+          <span className="chip-label">Player payments</span>
         </div>
         <div className="chip">
           <span className="chip-value">{summary.categorised}</span>
-          <span className="chip-label">Categorised</span>
+          <span className="chip-label">Other (in accounts)</span>
         </div>
         <div className="chip">
           <span className="chip-value">{summary.ignored}</span>
-          <span className="chip-label">Ignored</span>
+          <span className="chip-label">Set aside</span>
         </div>
         {summary.total_allocated_amount > 0 && (
           <div className="chip">
             <span className="chip-value" style={{ color: "var(--success)", fontSize: "1rem" }}>
               ₦{Math.round(summary.total_allocated_amount).toLocaleString()}
             </span>
-            <span className="chip-label">Total allocated</span>
+            <span className="chip-label">Total player payments</span>
           </div>
         )}
         {summary.unallocated_amount > 0 && (
