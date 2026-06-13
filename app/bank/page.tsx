@@ -3,6 +3,7 @@ import {
   getBankTransactions,
   getBankTransactionSummary,
   getBankReconciliation,
+  getBankImportBatches,
   insertBankTransactions,
   ignoreBankTransaction,
   restoreBankTransaction,
@@ -109,6 +110,7 @@ export default async function BankPage({
 
   const summary = getBankTransactionSummary();
   const recon = getBankReconciliation();
+  const batches = getBankImportBatches();
   const transactions = getBankTransactions({
     status: statusFilter,
     search: search || undefined,
@@ -257,6 +259,66 @@ export default async function BankPage({
                 </p>
               </>
             )}
+          </div>
+        </details>
+      )}
+
+      {/* Import history */}
+      {batches.length > 0 && (
+        <details className="card" style={{ marginBottom: "1rem" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+            Import history ({batches.length} statement{batches.length === 1 ? "" : "s"})
+          </summary>
+          <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", overflow: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Imported</th>
+                  <th>Period</th>
+                  <th className="text-right">Rows</th>
+                  <th className="text-right">Net</th>
+                  <th className="text-right">Opening</th>
+                  <th className="text-right">Closing</th>
+                  <th>Continuity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batches.map((b, i) => {
+                  const prev = i > 0 ? batches[i - 1] : null;
+                  const delta = prev ? Math.round((b.opening - prev.closing) * 100) / 100 : 0;
+                  const overlaps = prev ? b.firstDate <= prev.lastDate : false;
+                  const continuous = prev ? Math.abs(delta) <= 0.01 : true;
+                  return (
+                    <tr key={b.batch}>
+                      <td style={{ whiteSpace: "nowrap" }}>{b.importedAt ?? "—"}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{b.firstDate} → {b.lastDate}</td>
+                      <td className="text-right">{b.rowCount}</td>
+                      <td className="text-right" style={{ color: b.net >= 0 ? "var(--success)" : "var(--danger)" }}>
+                        {b.net < 0 ? "-" : ""}₦{Math.abs(b.net).toLocaleString()}
+                      </td>
+                      <td className="text-right">₦{b.opening.toLocaleString()}</td>
+                      <td className="text-right">₦{b.closing.toLocaleString()}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {!prev ? (
+                          <span className="text-dim">baseline</span>
+                        ) : continuous && !overlaps ? (
+                          <span style={{ color: "var(--success)" }}>✓ continues</span>
+                        ) : overlaps ? (
+                          <span style={{ color: "var(--danger)" }}>overlaps prev</span>
+                        ) : (
+                          <span style={{ color: "var(--danger)" }}>
+                            Δ {delta > 0 ? "+" : "-"}₦{Math.abs(delta).toLocaleString()}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="text-dim" style={{ marginTop: "0.5rem" }}>
+              Each statement&apos;s opening balance should equal the previous statement&apos;s closing. A Δ flag means a missing or duplicated statement between the two; &quot;overlaps prev&quot; means the period was already partly imported.
+            </p>
           </div>
         </details>
       )}

@@ -1393,6 +1393,89 @@ export function getBankReconciliation() {
   };
 }
 
+/**
+ * One row per import batch (i.e. per uploaded statement PDF), in statement-period
+ * order. For each we derive the period covered, row count, deposits/withdrawals,
+ * and the opening (brought-forward) and closing balance — opening = the first
+ * row's balance minus its own movement, closing = the last row's balance. The
+ * import timestamp is recovered from the batch id (`import-<epoch-ms>-<hex>`).
+ *
+ * Used to spot missing or duplicated statements: consecutive statements should
+ * chain, so one statement's opening balance should equal the previous one's
+ * closing. The Bank page flags where it doesn't.
+ */
+export function getBankImportBatches() {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const rows = db()
+    .prepare(
+      `SELECT import_batch, trans_date, deposit, withdrawal, balance
+       FROM bank_transactions
+       ORDER BY trans_date ASC, id ASC`
+    )
+    .all() as Array<{
+      import_batch: string;
+      trans_date: string;
+      deposit: number;
+      withdrawal: number;
+      balance: number;
+    }>;
+
+  type Batch = {
+    batch: string;
+    importedAt: string | null;
+    firstDate: string;
+    lastDate: string;
+    rowCount: number;
+    deposits: number;
+    withdrawals: number;
+    net: number;
+    opening: number;
+    closing: number;
+  };
+
+  const map = new Map<string, Batch>();
+  for (const r of rows) {
+    let b = map.get(r.import_batch);
+    if (!b) {
+      // First row encountered for this batch is its earliest (rows are ordered).
+      const m = r.import_batch.match(/^import-(\d+)-/);
+      let importedAt: string | null = null;
+      if (m) {
+        const d = new Date(Number(m[1]));
+        if (!isNaN(d.getTime())) importedAt = d.toISOString().slice(0, 10);
+      }
+      b = {
+        batch: r.import_batch,
+        importedAt,
+        firstDate: r.trans_date,
+        lastDate: r.trans_date,
+        rowCount: 0,
+        deposits: 0,
+        withdrawals: 0,
+        net: 0,
+        opening: round2(r.balance - (r.deposit - r.withdrawal)),
+        closing: r.balance,
+      };
+      map.set(r.import_batch, b);
+    }
+    b.lastDate = r.trans_date;
+    b.closing = r.balance;
+    b.rowCount += 1;
+    b.deposits = round2(b.deposits + r.deposit);
+    b.withdrawals = round2(b.withdrawals + r.withdrawal);
+    b.net = round2(b.deposits - b.withdrawals);
+  }
+
+  return [...map.values()].sort((a, b) =>
+    a.firstDate < b.firstDate ? -1
+      : a.firstDate > b.firstDate ? 1
+      : a.lastDate < b.lastDate ? -1
+      : a.lastDate > b.lastDate ? 1
+      : 0
+  );
+}
+
 /* ── Category management ───────────────────────────── */
 
 export function setCategoryForTransaction(txnId: number, category: string | null) {
