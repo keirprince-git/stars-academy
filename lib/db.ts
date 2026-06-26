@@ -1630,7 +1630,11 @@ export function setTransactionSplits(
   );
   const deleteSplits = d.prepare("DELETE FROM bank_transaction_splits WHERE txn_id = ?");
   const stamp = d.prepare(
-    "UPDATE bank_transactions SET categorised_at = datetime('now'), categorised_by = ?, category = ? WHERE id = ?"
+    // Setting splits also flags the row as a non-player item (status='ignored')
+    // so it leaves "Needs action", counts under "Other (in accounts)", and shows
+    // the categorised pill — whether reached via Ignore→Categorise or by
+    // categorising an expense directly. No-op for rows already ignored.
+    "UPDATE bank_transactions SET categorised_at = datetime('now'), categorised_by = ?, category = ?, status = 'ignored' WHERE id = ?"
   );
 
   const tx = d.transaction((items: TransactionSplitInput[]) => {

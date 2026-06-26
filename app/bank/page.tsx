@@ -560,6 +560,11 @@ export default async function BankPage({
                         {t.status === "partial" ? `+Add (₦${Math.round(remaining).toLocaleString()})` : "Allocate"}
                       </a>
                     )}
+                    {t.status === "unallocated" && t.deposit === 0 && t.withdrawal > 0 && (
+                      <a href={`/bank/${t.id}/categorise`} className="btn btn-sm btn-primary">
+                        Categorise
+                      </a>
+                    )}
                     {t.status === "unallocated" && (
                       <form action={handleIgnore} style={{ display: "inline" }}>
                         <input type="hidden" name="txn_id" value={t.id} />
