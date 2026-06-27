@@ -1,8 +1,8 @@
 import { requireAuth } from "@/lib/auth";
-import { getBankTransaction, getPlayers, createBundle, getKitOrderForPlayer, ensureKitOrdersForAllPlayers } from "@/lib/db";
+import { getBankTransaction, getPlayers, ensureKitOrdersForAllPlayers } from "@/lib/db";
 import { getAllCategories } from "@/lib/categories";
 import { KIT_YEAR } from "@/lib/kit";
-import { redirect } from "next/navigation";
+import { saveBundleAction } from "./actions";
 
 export default async function BundlePage({
   searchParams,
@@ -41,56 +41,6 @@ export default async function BundlePage({
   const players = getPlayers({ status: "Active", sort: "name", dir: "asc" });
   const incomeCategories = getAllCategories().filter((c) => c.type === "income" && c.value !== "kit_sales");
   const errorMsg = typeof sp.error === "string" ? sp.error : null;
-
-  const handleSave = async (formData: FormData) => {
-    "use server";
-    const playerLines: Array<{ playerId: number; sessions: number; amount: number; package: string | null; notes: string | null }> = [];
-    let i = 0;
-    while (formData.has(`p_player_${i}`)) {
-      const playerId = parseInt(formData.get(`p_player_${i}`) as string, 10);
-      const sessions = parseInt(formData.get(`p_sessions_${i}`) as string, 10);
-      const amount = parseFloat(formData.get(`p_amount_${i}`) as string);
-      const pkg = ((formData.get(`p_pkg_${i}`) as string) || "").trim() || null;
-      if (playerId && !isNaN(sessions) && sessions > 0 && !isNaN(amount) && amount > 0) {
-        playerLines.push({ playerId, sessions, amount, package: pkg, notes: null });
-      }
-      i++;
-    }
-    const categoryLines: Array<{ category: string; amount: number; notes: string | null }> = [];
-    let j = 0;
-    while (formData.has(`c_cat_${j}`)) {
-      const category = ((formData.get(`c_cat_${j}`) as string) || "").trim();
-      const amount = parseFloat(formData.get(`c_amount_${j}`) as string);
-      const notes = ((formData.get(`c_notes_${j}`) as string) || "").trim() || null;
-      if (category && !isNaN(amount) && amount > 0) {
-        categoryLines.push({ category, amount, notes });
-      }
-      j++;
-    }
-
-    const kitLines: Array<{ playerId: number; kitOrderId: number; amount: number; notes: string | null }> = [];
-    let k = 0;
-    while (formData.has(`k_player_${k}`)) {
-      const playerId = parseInt(formData.get(`k_player_${k}`) as string, 10);
-      const amount = parseFloat(formData.get(`k_amount_${k}`) as string);
-      const notes = ((formData.get(`k_notes_${k}`) as string) || "").trim() || null;
-      if (playerId && !isNaN(amount) && amount > 0) {
-        const ko = getKitOrderForPlayer(playerId, KIT_YEAR);
-        kitLines.push({ playerId, kitOrderId: ko ? ko.id : 0, amount, notes });
-      }
-      k++;
-    }
-
-    const qs = eligibleIds.map((id) => `ids=${id}`).join("&");
-    try {
-      createBundle(eligibleIds, playerLines, kitLines, categoryLines);
-      redirect("/bank?success=bundled");
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Unknown error";
-      if (msg.includes("NEXT_REDIRECT")) throw e;
-      redirect(`/bank/bundle?${qs}&error=${encodeURIComponent(msg)}`);
-    }
-  };
 
   if (eligibleIds.length === 0) {
     return (
@@ -146,7 +96,10 @@ export default async function BundlePage({
           Split the pooled total across player sessions and/or income categories. The line amounts must sum to the pool total.
         </p>
 
-        <form action={handleSave}>
+        <form action={saveBundleAction}>
+          {eligibleIds.map((id) => (
+            <input key={id} type="hidden" name="bundle_id" value={id} />
+          ))}
           <h3 style={{ fontSize: "0.95rem", margin: "0.5rem 0" }}>Player sessions</h3>
           <table style={{ marginBottom: "1rem" }}>
             <thead>
@@ -251,10 +204,8 @@ export default async function BundlePage({
             </div>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", gap: "1.25rem", marginBottom: "0.75rem", fontWeight: 600, flexWrap: "wrap" }}>
-            <span>Lines total: ₦<span id="bundleSum">0</span></span>
-            <span>Pool total: ₦{pool.toLocaleString()}</span>
-            <span id="bundleDiff" className="text-dim"></span>
+          <div style={{ marginBottom: "0.75rem", fontWeight: 600 }}>
+            Pool total: ₦{pool.toLocaleString()} — the line amounts must add up to this exactly.
           </div>
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -263,28 +214,6 @@ export default async function BundlePage({
           </div>
         </form>
       </div>
-
-      <script dangerouslySetInnerHTML={{ __html: `
-        (function() {
-          var total = ${pool};
-          var inputs = document.querySelectorAll('[data-bundle-amount]');
-          var sumEl = document.getElementById('bundleSum');
-          var diffEl = document.getElementById('bundleDiff');
-          function fmt(n){ return n.toLocaleString('en-US',{maximumFractionDigits:2}); }
-          function recalc(){
-            var sum = 0;
-            inputs.forEach(function(el){ var v = parseFloat(el.value); if(!isNaN(v)) sum += v; });
-            sum = Math.round(sum*100)/100;
-            sumEl.textContent = fmt(sum);
-            var diff = Math.round((total - sum)*100)/100;
-            if (Math.abs(diff) < 0.01) { diffEl.textContent = '✓ matches pool'; diffEl.style.color = 'var(--success)'; }
-            else if (diff > 0) { diffEl.textContent = '₦' + fmt(diff) + ' still to allocate'; diffEl.style.color = 'var(--warning)'; }
-            else { diffEl.textContent = '₦' + fmt(-diff) + ' over'; diffEl.style.color = 'var(--danger)'; }
-          }
-          inputs.forEach(function(el){ el.addEventListener('input', recalc); });
-          recalc();
-        })();
-      `}} />
     </>
   );
 }
