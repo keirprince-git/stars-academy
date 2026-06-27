@@ -479,11 +479,11 @@ export default async function BankPage({
 
       {/* Bundle toolbar (detached form so row action-forms aren't nested) */}
       <form id="bundleForm" method="GET" action="/bank/bundle"></form>
-      <div style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-        <button type="submit" form="bundleForm" className="btn btn-sm">Bundle selected deposits →</button>
+      <div style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
         <span className="text-dim" style={{ fontSize: "0.85rem" }}>
           Tick two or more deposits below to combine them into one payment and allocate the total.
         </span>
+        <button type="submit" form="bundleForm" className="btn btn-primary">Bundle selected deposits →</button>
       </div>
 
       {/* Transaction table */}
