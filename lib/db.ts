@@ -1343,17 +1343,25 @@ export function removeBundle(groupRef: string) {
   if (allocs.length === 0 && splits.length === 0) throw new Error("Bundle not found.");
 
   const touched = new Set<number>();
+  const purchaseIds = new Set<number>();
+  const kitOrderIds = new Set<number>();
+  for (const a of allocs) {
+    touched.add(a.bank_transaction_id);
+    if (a.purchase_id) purchaseIds.add(a.purchase_id);
+    if (a.kind === "kit" && a.kit_order_id) kitOrderIds.add(a.kit_order_id);
+  }
+  for (const s of splits) touched.add(s.txn_id);
+
   const tx = d.transaction(() => {
-    for (const a of allocs) {
-      touched.add(a.bank_transaction_id);
-      d.prepare("DELETE FROM bank_allocations WHERE id = ?").run(a.id);
-      if (a.purchase_id) d.prepare("DELETE FROM sessions_purchased WHERE id = ?").run(a.purchase_id);
-      if (a.kind === "kit" && a.kit_order_id) setKitOrderStatus(a.kit_order_id, "confirmed");
-    }
-    for (const s of splits) {
-      touched.add(s.txn_id);
-      d.prepare("DELETE FROM bank_transaction_splits WHERE id = ?").run(s.id);
-    }
+    // Delete ALL allocations and splits for the group first. A bundle's purchase
+    // can be funded by several allocations sharing one purchase_id, so the
+    // sessions_purchased rows must be deleted only AFTER every referencing
+    // allocation is gone — otherwise the FK blocks it.
+    d.prepare("DELETE FROM bank_allocations WHERE group_ref = ?").run(groupRef);
+    d.prepare("DELETE FROM bank_transaction_splits WHERE group_ref = ?").run(groupRef);
+    const delPurchase = d.prepare("DELETE FROM sessions_purchased WHERE id = ?");
+    for (const pid of purchaseIds) delPurchase.run(pid);
+    for (const koid of kitOrderIds) setKitOrderStatus(koid, "confirmed");
     for (const id of touched) recomputeTxnCoverage(d, id);
   });
   tx();
