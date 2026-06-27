@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { getIncomeAndExpenditure } from "@/lib/db";
+import { getIncomeAndExpenditure, getLedgerTransactions } from "@/lib/db";
 import { getCategoryLabel } from "@/lib/categories";
 
 export default async function AccountsPage({
@@ -28,6 +28,16 @@ export default async function AccountsPage({
     : to
     ? `Up to ${to}`
     : "All time";
+
+  const periodQs = [from && `from=${from}`, to && `to=${to}`].filter(Boolean).join("&");
+  const activeAccount = sp.account ?? "";
+  const activeIsIncome = sp.income === "1";
+  const ledger = activeAccount
+    ? getLedgerTransactions(activeAccount, activeIsIncome, { from: from || undefined, to: to || undefined })
+    : [];
+  const ledgerTotal = ledger.reduce((s, t) => s + t.amount, 0);
+  const lineLink = (category: string, income: boolean) =>
+    `/accounts?account=${encodeURIComponent(category)}&income=${income ? 1 : 0}${periodQs ? `&${periodQs}` : ""}`;
 
   return (
     <>
@@ -81,6 +91,53 @@ export default async function AccountsPage({
 
       <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>{periodLabel}</p>
 
+      {/* Drill-down: transactions behind a clicked line */}
+      {activeAccount && (
+        <div className="card" style={{ marginBottom: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", gap: "1rem" }}>
+            <h2 style={{ margin: 0 }}>
+              {getCategoryLabel(activeAccount)} — {activeIsIncome ? "income" : "expense"} ({ledger.length})
+            </h2>
+            <a href={`/accounts${periodQs ? `?${periodQs}` : ""}`} className="btn btn-sm">Close</a>
+          </div>
+          {ledger.length === 0 ? (
+            <p className="text-dim">No transactions for this account in the period.</p>
+          ) : (
+            <div style={{ overflow: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Detail</th>
+                    <th className="text-right">Amount</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.map((t, i) => (
+                    <tr key={i}>
+                      <td style={{ whiteSpace: "nowrap" }}>{t.trans_date}</td>
+                      <td style={{ maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis" }} title={t.description}>{t.description}</td>
+                      <td className="text-dim">{t.detail ?? ""}</td>
+                      <td className="text-right" style={{ fontWeight: 500 }}>₦{t.amount.toLocaleString()}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <a href={t.source === "split" ? `/bank/${t.txn_id}/categorise` : `/bank/${t.txn_id}/allocate`} className="btn btn-sm">View</a>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 600, borderTop: "2px solid var(--border)" }}>
+                    <td colSpan={3} className="text-right">Total</td>
+                    <td className="text-right">₦{Math.round(ledgerTotal).toLocaleString()}</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Income */}
       <div className="card" style={{ marginBottom: "1rem" }}>
         <h2 style={{ marginBottom: "0.75rem", color: "var(--success)" }}>Income</h2>
@@ -98,7 +155,7 @@ export default async function AccountsPage({
             <tbody>
               {data.income.map((line) => (
                 <tr key={line.category}>
-                  <td>{getCategoryLabel(line.category)}</td>
+                  <td><a href={lineLink(line.category, true)}>{getCategoryLabel(line.category)}</a></td>
                   <td className="text-right" style={{ color: "var(--success)", fontWeight: 500 }}>
                     ₦{Math.round(line.total).toLocaleString()}
                   </td>
@@ -134,7 +191,7 @@ export default async function AccountsPage({
             <tbody>
               {data.expenses.map((line) => (
                 <tr key={line.category}>
-                  <td>{getCategoryLabel(line.category)}</td>
+                  <td><a href={lineLink(line.category, false)}>{getCategoryLabel(line.category)}</a></td>
                   <td className="text-right" style={{ color: "var(--danger)", fontWeight: 500 }}>
                     ₦{Math.round(line.total).toLocaleString()}
                   </td>

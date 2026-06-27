@@ -2044,6 +2044,76 @@ export function getIncomeAndExpenditure(opts?: { from?: string; to?: string }) {
   };
 }
 
+export interface LedgerTxn {
+  txn_id: number;
+  trans_date: string;
+  description: string;
+  reference: string;
+  amount: number;
+  detail: string | null;   // player name (allocations) or split notes
+  source: string;          // 'split' | 'allocation'
+}
+
+/**
+ * The individual transactions behind one Income & Expenditure line, so the
+ * accounts page can drill down. Mirrors how getIncomeAndExpenditure builds each
+ * line: session_fees → session allocations; kit_sales → kit allocations plus any
+ * kit_sales splits; every other line → category splits filtered by the parent's
+ * direction (deposit = income, withdrawal = expense).
+ */
+export function getLedgerTransactions(
+  account: string,
+  isIncome: boolean,
+  opts?: { from?: string; to?: string }
+): LedgerTxn[] {
+  const d = db();
+  const conds: string[] = [];
+  const params: Record<string, string> = {};
+  if (opts?.from) { conds.push("bt.trans_date >= @from"); params.from = opts.from; }
+  if (opts?.to) { conds.push("bt.trans_date <= @to"); params.to = opts.to; }
+  const dateClause = conds.length ? " AND " + conds.join(" AND ") : "";
+
+  if (isIncome && account === "session_fees") {
+    return d.prepare(
+      `SELECT bt.id AS txn_id, bt.trans_date, bt.description, bt.reference, ba.amount,
+              p.name AS detail, 'allocation' AS source
+       FROM bank_allocations ba
+       JOIN bank_transactions bt ON bt.id = ba.bank_transaction_id
+       JOIN players p ON p.id = ba.player_id
+       WHERE ba.kind = 'session' ${dateClause}
+       ORDER BY bt.trans_date DESC, bt.id DESC`
+    ).all(params) as LedgerTxn[];
+  }
+
+  if (isIncome && account === "kit_sales") {
+    return d.prepare(
+      `SELECT bt.id AS txn_id, bt.trans_date, bt.description, bt.reference, ba.amount,
+              p.name AS detail, 'allocation' AS source
+       FROM bank_allocations ba
+       JOIN bank_transactions bt ON bt.id = ba.bank_transaction_id
+       JOIN players p ON p.id = ba.player_id
+       WHERE ba.kind = 'kit' ${dateClause}
+       UNION ALL
+       SELECT bt.id AS txn_id, bt.trans_date, bt.description, bt.reference, s.amount,
+              s.notes AS detail, 'split' AS source
+       FROM bank_transaction_splits s
+       JOIN bank_transactions bt ON bt.id = s.txn_id
+       WHERE s.category = 'kit_sales' AND bt.deposit > 0 ${dateClause}
+       ORDER BY trans_date DESC`
+    ).all(params) as LedgerTxn[];
+  }
+
+  const dir = isIncome ? "bt.deposit > 0" : "bt.withdrawal > 0";
+  return d.prepare(
+    `SELECT bt.id AS txn_id, bt.trans_date, bt.description, bt.reference, s.amount,
+            s.notes AS detail, 'split' AS source
+     FROM bank_transaction_splits s
+     JOIN bank_transactions bt ON bt.id = s.txn_id
+     WHERE s.category = @account AND ${dir} ${dateClause}
+     ORDER BY bt.trans_date DESC, bt.id DESC`
+  ).all({ ...params, account }) as LedgerTxn[];
+}
+
 /* ── Kit orders ──────────────────────────────────────
    One row per (player, kit_year). Status flows
    pending → confirmed/declined → paid → collected. */
