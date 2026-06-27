@@ -2,13 +2,10 @@ import { requireAuth } from "@/lib/auth";
 import {
   getBankTransaction,
   getTransactionSplits,
-  setTransactionSplits,
-  clearTransactionSplits,
   getCategorisedStamp,
-  type TransactionSplitInput,
 } from "@/lib/db";
 import { getAllCategories, getCategoryLabel } from "@/lib/categories";
-import { redirect } from "next/navigation";
+import { saveSplitsAction, clearSplitsAction } from "./actions";
 
 export default async function CategorisePage({
   params,
@@ -39,50 +36,6 @@ export default async function CategorisePage({
   const categoriesForDirection = allCategories.filter(c => c.type === direction);
   const splits = getTransactionSplits(txnId);
   const stamp = getCategorisedStamp(txnId);
-
-  /* ── Server actions ──────────────────────────────────── */
-
-  const handleSave = async (formData: FormData) => {
-    "use server";
-
-    const lines: TransactionSplitInput[] = [];
-    let i = 0;
-    while (formData.has(`category_${i}`)) {
-      const category = (formData.get(`category_${i}`) as string).trim();
-      const amountRaw = formData.get(`amount_${i}`) as string;
-      const notes = ((formData.get(`notes_${i}`) as string) || "").trim() || null;
-      const amount = parseFloat(amountRaw);
-      if (category && !isNaN(amount) && amount > 0) {
-        lines.push({ category, amount, notes });
-      }
-      i++;
-    }
-
-    if (lines.length === 0) {
-      redirect(`/bank/${txnId}/categorise?error=empty`);
-    }
-
-    // Validate sum matches transaction total within 1 kobo (₦0.01) tolerance.
-    const sum = lines.reduce((s, l) => s + l.amount, 0);
-    if (Math.abs(sum - totalAmount) > 0.01) {
-      redirect(`/bank/${txnId}/categorise?error=sum_mismatch&sum=${encodeURIComponent(sum.toFixed(2))}`);
-    }
-
-    try {
-      setTransactionSplits(txnId, lines, auth.userId);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Unknown error";
-      if (msg.includes("NEXT_REDIRECT")) throw e;
-      redirect(`/bank/${txnId}/categorise?error=${encodeURIComponent(msg)}`);
-    }
-    redirect("/bank?success=categorised");
-  };
-
-  const handleClear = async () => {
-    "use server";
-    clearTransactionSplits(txnId, auth.userId);
-    redirect(`/bank/${txnId}/categorise?success=cleared`);
-  };
 
   // Pre-fill form rows: existing splits, or one empty row, or one row with the full amount if uncategorised.
   const initialRows: Array<{ category: string; amount: number | ""; notes: string }> =
@@ -154,7 +107,8 @@ export default async function CategorisePage({
           Break this transaction across one or more {direction} categories. The split amounts must sum to the total.
         </p>
 
-        <form action={handleSave} id="splitForm">
+        <form action={saveSplitsAction} id="splitForm">
+          <input type="hidden" name="txn_id" value={txnId} />
           <table style={{ marginBottom: "0.75rem" }}>
             <thead>
               <tr>
@@ -217,7 +171,7 @@ export default async function CategorisePage({
             <button type="submit" className="btn btn-primary">Save Splits</button>
             <a href="/bank" className="btn">Cancel</a>
             {splits.length > 0 && (
-              <button type="submit" formAction={handleClear} className="btn" style={{ marginLeft: "auto", color: "var(--danger)" }}>
+              <button type="submit" formAction={clearSplitsAction} className="btn" style={{ marginLeft: "auto", color: "var(--danger)" }}>
                 Clear All Splits
               </button>
             )}

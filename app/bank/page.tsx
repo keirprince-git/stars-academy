@@ -140,7 +140,7 @@ export default async function BankPage({
   });
 
   // Pre-load allocations for each transaction that has them
-  const allocsByTxn: Record<number, Array<{ player_name: string; player_code: string; amount: number; sessions_purchased: number }>> = {};
+  const allocsByTxn: Record<number, Array<{ player_id: number; player_name: string; player_code: string; amount: number; sessions_purchased: number }>> = {};
   for (const t of transactions) {
     if (t.status === "allocated" || t.status === "partial") {
       allocsByTxn[t.id] = getBankAllocations(t.id);
