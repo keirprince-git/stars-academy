@@ -43,7 +43,10 @@ export default async function AccountsPage({
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h2>Income &amp; Expenditure</h2>
-        <a href="/accounts/categories" className="btn btn-sm">Manage Categories</a>
+        <div style={{ display: "flex", gap: "0.5rem", whiteSpace: "nowrap" }}>
+          <a href="/accounts/monthly-export" className="btn btn-sm">Monthly summary (CSV)</a>
+          <a href="/accounts/categories" className="btn btn-sm">Manage Categories</a>
+        </div>
       </div>
 
       {/* Period filter */}

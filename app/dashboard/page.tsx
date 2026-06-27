@@ -1,6 +1,13 @@
 import { requireAuth } from "@/lib/auth";
-import { getDashboard, getDashboardSummary } from "@/lib/db";
+import { getDashboard, getDashboardSummary, getMonthlySummary } from "@/lib/db";
 import type { DashboardRow } from "@/lib/types";
+
+function Delta({ delta, money }: { delta: number; money: boolean }) {
+  if (!delta) return null;
+  const up = delta > 0;
+  const val = money ? `₦${Math.round(Math.abs(delta)).toLocaleString()}` : String(Math.abs(delta));
+  return <span style={{ color: up ? "var(--success)" : "var(--danger)" }}> {up ? "▲" : "▼"}{val}</span>;
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cls =
@@ -38,7 +45,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireAuth();
+  const auth = await requireAuth();
   const sp = await searchParams;
 
   const status    = sp.status    ?? "all";
@@ -49,6 +56,11 @@ export default async function DashboardPage({
 
   const rows = getDashboard({ status, payStatus, search });
   const summary = getDashboardSummary();
+
+  // Financial KPIs (admin only) — latest month vs the one before.
+  const monthly = auth.role === "admin" ? getMonthlySummary() : [];
+  const latest = monthly.length ? monthly[monthly.length - 1] : null;
+  const prev = monthly.length > 1 ? monthly[monthly.length - 2] : null;
 
   // Build current params for sort links
   const currentParams = new URLSearchParams();
@@ -93,6 +105,37 @@ export default async function DashboardPage({
           <span className="chip-label">Scholarship</span>
         </a>
       </div>
+
+      {/* ── Financial KPIs (admin) — latest month ─────── */}
+      {auth.role === "admin" && latest && (
+        <>
+          <h3 style={{ fontSize: "0.95rem", margin: "1.25rem 0 0.5rem" }} className="text-dim">
+            Latest month — {latest.month}
+          </h3>
+          <div className="summary-row">
+            <a href="/accounts" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
+              <span className="chip-value" style={{ color: "var(--success)", fontSize: "1rem" }}>₦{Math.round(latest.income).toLocaleString()}</span>
+              <span className="chip-label">Income{prev && <Delta delta={Math.round(latest.income - prev.income)} money />}</span>
+            </a>
+            <div className="chip">
+              <span className="chip-value" style={{ fontSize: "1rem" }}>₦{Math.round(latest.revenuePerSession).toLocaleString()}</span>
+              <span className="chip-label">Revenue / session</span>
+            </div>
+            <div className="chip">
+              <span className="chip-value">{latest.attendances}</span>
+              <span className="chip-label">Attendances{prev && <Delta delta={latest.attendances - prev.attendances} money={false} />}</span>
+            </div>
+            <div className="chip">
+              <span className="chip-value">{latest.sessionsHeld}</span>
+              <span className="chip-label">Sessions held</span>
+            </div>
+            <a href="/accounts/monthly-export" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
+              <span className="chip-value" style={{ fontSize: "1rem" }}>CSV ↓</span>
+              <span className="chip-label">Monthly trend</span>
+            </a>
+          </div>
+        </>
+      )}
 
       {/* ── Filters ────────────────────────────────── */}
       {/* eslint-disable-next-line @next/next/no-sync-scripts */}

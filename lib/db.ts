@@ -2114,6 +2114,88 @@ export function getLedgerTransactions(
   ).all({ ...params, account }) as LedgerTxn[];
 }
 
+export interface MonthlySummaryRow {
+  month: string;                // YYYY-MM
+  income: number;
+  expenses: number;
+  surplus: number;
+  sessionFees: number;
+  sessionsHeld: number;
+  attendances: number;
+  revenuePerSession: number;    // sessionFees / sessionsHeld
+  attendancePerSession: number; // attendances / sessionsHeld
+}
+
+/**
+ * Month-by-month roll-up for trend analysis / KPIs. Income & expenses mirror the
+ * I&E logic (allocations + direction-based splits); sessions held and attendances
+ * come from attendance_log (a "session held" is a distinct session_date).
+ */
+export function getMonthlySummary(): MonthlySummaryRow[] {
+  const d = db();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  const allocByMonth = new Map<string, number>();
+  for (const r of d.prepare(
+    `SELECT substr(trans_date,1,7) AS m, COALESCE(SUM(allocated_amount),0) AS total
+     FROM bank_transactions WHERE allocated_amount > 0 GROUP BY m`
+  ).all() as Array<{ m: string; total: number }>) allocByMonth.set(r.m, r.total);
+
+  const kitByMonth = new Map<string, number>();
+  for (const r of d.prepare(
+    `SELECT substr(bt.trans_date,1,7) AS m, COALESCE(SUM(ba.amount),0) AS total
+     FROM bank_allocations ba JOIN bank_transactions bt ON bt.id = ba.bank_transaction_id
+     WHERE ba.kind = 'kit' GROUP BY m`
+  ).all() as Array<{ m: string; total: number }>) kitByMonth.set(r.m, r.total);
+
+  const incSplitByMonth = new Map<string, number>();
+  const expSplitByMonth = new Map<string, number>();
+  for (const r of d.prepare(
+    `SELECT substr(bt.trans_date,1,7) AS m, bt.deposit > 0 AS is_income, COALESCE(SUM(s.amount),0) AS total
+     FROM bank_transaction_splits s JOIN bank_transactions bt ON bt.id = s.txn_id
+     GROUP BY m, is_income`
+  ).all() as Array<{ m: string; is_income: number; total: number }>) {
+    (r.is_income ? incSplitByMonth : expSplitByMonth).set(r.m, r.total);
+  }
+
+  const attByMonth = new Map<string, { sessions: number; attendances: number }>();
+  for (const r of d.prepare(
+    `SELECT substr(session_date,1,7) AS m,
+            COUNT(DISTINCT session_date) AS sessions,
+            COALESCE(SUM(CASE WHEN attended = 1 THEN 1 ELSE 0 END),0) AS attendances
+     FROM attendance_log GROUP BY m`
+  ).all() as Array<{ m: string; sessions: number; attendances: number }>) {
+    attByMonth.set(r.m, { sessions: r.sessions, attendances: r.attendances });
+  }
+
+  const months = new Set<string>([
+    ...allocByMonth.keys(), ...kitByMonth.keys(),
+    ...incSplitByMonth.keys(), ...expSplitByMonth.keys(), ...attByMonth.keys(),
+  ]);
+
+  return [...months].filter(Boolean).sort().map((m) => {
+    const alloc = allocByMonth.get(m) ?? 0;
+    const kit = kitByMonth.get(m) ?? 0;
+    const incSplit = incSplitByMonth.get(m) ?? 0;
+    const expSplit = expSplitByMonth.get(m) ?? 0;
+    const att = attByMonth.get(m) ?? { sessions: 0, attendances: 0 };
+    const income = round2(alloc + incSplit);
+    const expenses = round2(expSplit);
+    const sessionFees = round2(alloc - kit);
+    return {
+      month: m,
+      income,
+      expenses,
+      surplus: round2(income - expenses),
+      sessionFees,
+      sessionsHeld: att.sessions,
+      attendances: att.attendances,
+      revenuePerSession: att.sessions > 0 ? round2(sessionFees / att.sessions) : 0,
+      attendancePerSession: att.sessions > 0 ? round2(att.attendances / att.sessions) : 0,
+    };
+  });
+}
+
 /* ── Kit orders ──────────────────────────────────────
    One row per (player, kit_year). Status flows
    pending → confirmed/declined → paid → collected. */
