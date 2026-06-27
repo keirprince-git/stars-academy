@@ -4,8 +4,9 @@ import {
   getTransactionSplits,
   getCategorisedStamp,
 } from "@/lib/db";
-import { getAllCategories, getCategoryLabel } from "@/lib/categories";
+import { getAllCategories } from "@/lib/categories";
 import { saveSplitsAction, clearSplitsAction } from "./actions";
+import SplitsEditor from "./SplitsEditor";
 
 export default async function CategorisePage({
   params,
@@ -36,17 +37,6 @@ export default async function CategorisePage({
   const categoriesForDirection = allCategories.filter(c => c.type === direction);
   const splits = getTransactionSplits(txnId);
   const stamp = getCategorisedStamp(txnId);
-
-  // Pre-fill form rows: existing splits, or one empty row, or one row with the full amount if uncategorised.
-  const initialRows: Array<{ category: string; amount: number | ""; notes: string }> =
-    splits.length > 0
-      ? splits.map(s => ({ category: s.category, amount: s.amount, notes: s.notes ?? "" }))
-      : [{ category: "", amount: totalAmount, notes: "" }];
-
-  // Pad to a few empty rows so the user can add lines without JS first.
-  while (initialRows.length < 4) {
-    initialRows.push({ category: "", amount: "", notes: "" });
-  }
 
   return (
     <>
@@ -107,119 +97,20 @@ export default async function CategorisePage({
           Break this transaction across one or more {direction} categories. The split amounts must sum to the total.
         </p>
 
-        <form action={saveSplitsAction} id="splitForm">
-          <input type="hidden" name="txn_id" value={txnId} />
-          <table style={{ marginBottom: "0.75rem" }}>
-            <thead>
-              <tr>
-                <th style={{ width: "40%" }}>Category</th>
-                <th className="text-right" style={{ width: "20%" }}>Amount (₦)</th>
-                <th>Notes (optional)</th>
-              </tr>
-            </thead>
-            <tbody id="splitRows">
-              {initialRows.map((row, i) => (
-                <tr key={i} data-split-row>
-                  <td>
-                    <select name={`category_${i}`} defaultValue={row.category} style={{ width: "100%" }}>
-                      <option value="">— Select category —</option>
-                      {categoriesForDirection.map(c => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="text-right">
-                    <input
-                      name={`amount_${i}`}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      defaultValue={row.amount === "" ? "" : row.amount}
-                      data-split-amount
-                      style={{ width: "100%", textAlign: "right" }}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      name={`notes_${i}`}
-                      type="text"
-                      defaultValue={row.notes}
-                      placeholder="e.g. boots component"
-                      style={{ width: "100%" }}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ fontWeight: 600 }}>
-                <td className="text-right">Sum of splits:</td>
-                <td className="text-right" id="splitSumCell">
-                  ₦<span id="splitSum">0</span>
-                </td>
-                <td id="splitDiff" className="text-dim"></td>
-              </tr>
-              <tr style={{ fontWeight: 600 }}>
-                <td className="text-right">Transaction total:</td>
-                <td className="text-right">₦{totalAmount.toLocaleString()}</td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button type="submit" className="btn btn-primary">Save Splits</button>
-            <a href="/bank" className="btn">Cancel</a>
-            {splits.length > 0 && (
-              <button type="submit" formAction={clearSplitsAction} className="btn" style={{ marginLeft: "auto", color: "var(--danger)" }}>
-                Clear All Splits
-              </button>
-            )}
-          </div>
-
-          {splits.length > 0 && (
-            <p className="text-dim" style={{ fontSize: "0.8rem", marginTop: "0.75rem" }}>
-              Currently split into: {splits.map(s => `${getCategoryLabel(s.category)} ₦${s.amount.toLocaleString()}`).join(" · ")}
-            </p>
-          )}
-        </form>
-      </div>
-
-      {/* Live sum + auto-fill last row to balance */}
-      <script dangerouslySetInnerHTML={{ __html: `
-        (function() {
-          var total = ${totalAmount};
-          var rows = document.querySelectorAll('[data-split-row]');
-          var inputs = document.querySelectorAll('[data-split-amount]');
-          var sumEl = document.getElementById('splitSum');
-          var diffEl = document.getElementById('splitDiff');
-
-          function fmt(n) { return n.toLocaleString('en-US', {maximumFractionDigits: 2}); }
-
-          function recalc() {
-            var sum = 0;
-            inputs.forEach(function(el) {
-              var v = parseFloat(el.value);
-              if (!isNaN(v)) sum += v;
-            });
-            sumEl.textContent = fmt(Math.round(sum * 100) / 100);
-            var diff = Math.round((total - sum) * 100) / 100;
-            if (Math.abs(diff) < 0.01) {
-              diffEl.textContent = '✓ matches total';
-              diffEl.style.color = 'var(--success)';
-            } else if (diff > 0) {
-              diffEl.textContent = '₦' + fmt(diff) + ' under';
-              diffEl.style.color = 'var(--warning)';
-            } else {
-              diffEl.textContent = '₦' + fmt(-diff) + ' over';
-              diffEl.style.color = 'var(--danger)';
-            }
+        <SplitsEditor
+          txnId={txnId}
+          totalAmount={totalAmount}
+          categories={categoriesForDirection.map((c) => ({ value: c.value, label: c.label }))}
+          initialRows={
+            splits.length > 0
+              ? splits.map((s) => ({ category: s.category, amount: String(s.amount), notes: s.notes ?? "" }))
+              : [{ category: "", amount: String(totalAmount), notes: "" }]
           }
-
-          inputs.forEach(function(el) { el.addEventListener('input', recalc); });
-          recalc();
-        })();
-      `}} />
+          hasSplits={splits.length > 0}
+          saveAction={saveSplitsAction}
+          clearAction={clearSplitsAction}
+        />
+      </div>
     </>
   );
 }
