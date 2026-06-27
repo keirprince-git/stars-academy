@@ -68,7 +68,13 @@ export default async function CategorisePage({
       redirect(`/bank/${txnId}/categorise?error=sum_mismatch&sum=${encodeURIComponent(sum.toFixed(2))}`);
     }
 
-    setTransactionSplits(txnId, lines, auth.userId);
+    try {
+      setTransactionSplits(txnId, lines, auth.userId);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      if (msg.includes("NEXT_REDIRECT")) throw e;
+      redirect(`/bank/${txnId}/categorise?error=${encodeURIComponent(msg)}`);
+    }
     redirect("/bank?success=categorised");
   };
 
@@ -106,6 +112,9 @@ export default async function CategorisePage({
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>
           The split lines sum to ₦{sp.sum} but the transaction total is ₦{totalAmount.toLocaleString()}. They must match exactly.
         </div>
+      )}
+      {sp.error && !["empty", "sum_mismatch"].includes(sp.error) && (
+        <div className="error-msg" style={{ marginBottom: "0.75rem" }}>{decodeURIComponent(sp.error)}</div>
       )}
 
       {/* ── Transaction summary ──────────────────────── */}
