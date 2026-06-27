@@ -33,6 +33,11 @@ export default async function BankPage({
   const statusFilter = sp.status ?? "all";
   const search = sp.search ?? "";
   const batchFilter = sp.batch ?? "";
+  const exportQs = [
+    statusFilter !== "all" && `status=${encodeURIComponent(statusFilter)}`,
+    search && `search=${encodeURIComponent(search)}`,
+    batchFilter && `batch=${encodeURIComponent(batchFilter)}`,
+  ].filter(Boolean).join("&");
   const success = sp.success;
   const error = sp.error;
 
@@ -156,6 +161,7 @@ export default async function BankPage({
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h2>Bank Transactions</h2>
+        <a href={`/bank/export${exportQs ? `?${exportQs}` : ""}`} className="btn btn-sm">Download CSV</a>
       </div>
 
       {/* Messages */}

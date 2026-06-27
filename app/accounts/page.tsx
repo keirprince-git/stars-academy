@@ -98,7 +98,10 @@ export default async function AccountsPage({
             <h2 style={{ margin: 0 }}>
               {getCategoryLabel(activeAccount)} — {activeIsIncome ? "income" : "expense"} ({ledger.length})
             </h2>
-            <a href={`/accounts${periodQs ? `?${periodQs}` : ""}`} className="btn btn-sm">Close</a>
+            <div style={{ display: "flex", gap: "0.5rem", whiteSpace: "nowrap" }}>
+              <a href={`/accounts/export?account=${encodeURIComponent(activeAccount)}&income=${activeIsIncome ? 1 : 0}${periodQs ? `&${periodQs}` : ""}`} className="btn btn-sm">Download CSV</a>
+              <a href={`/accounts${periodQs ? `?${periodQs}` : ""}`} className="btn btn-sm">Close</a>
+            </div>
           </div>
           {ledger.length === 0 ? (
             <p className="text-dim">No transactions for this account in the period.</p>
