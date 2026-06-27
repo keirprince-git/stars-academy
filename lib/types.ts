@@ -90,5 +90,6 @@ export interface BankAllocation {
   package: string | null;
   purchase_id: number | null; // linked sessions_purchased record
   notes: string | null;
+  group_ref: string | null;   // set when created as part of a bundled payment
   created_at: string;
 }

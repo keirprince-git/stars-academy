@@ -169,6 +169,12 @@ export default async function BankPage({
           Removed {sp.count} unattached transaction{sp.count === "1" ? "" : "s"} from the import. Clear the filter to see the updated reconciliation.
         </div>
       )}
+      {success === "bundled" && (
+        <div className="alert alert-success">Payments bundled and allocated.</div>
+      )}
+      {success === "unbundled" && (
+        <div className="alert alert-success">Bundle reversed — those deposits are available to allocate again.</div>
+      )}
       {(success === "ignored" || success === "restored" || success === "allocated" || success === "categorised" || success === "deleted") && (
         <div className="alert alert-success">
           {success === "ignored" ? "Transaction ignored."
@@ -471,11 +477,21 @@ export default async function BankPage({
         </div>
       )}
 
+      {/* Bundle toolbar (detached form so row action-forms aren't nested) */}
+      <form id="bundleForm" method="GET" action="/bank/bundle"></form>
+      <div style={{ marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+        <button type="submit" form="bundleForm" className="btn btn-sm">Bundle selected deposits →</button>
+        <span className="text-dim" style={{ fontSize: "0.85rem" }}>
+          Tick two or more deposits below to combine them into one payment and allocate the total.
+        </span>
+      </div>
+
       {/* Transaction table */}
       <div className="card" style={{ padding: 0, overflow: "auto" }}>
         <table>
           <thead>
             <tr>
+              <th></th>
               <th>Date</th>
               <th>Description</th>
               <th className="text-right">Deposit</th>
@@ -488,7 +504,7 @@ export default async function BankPage({
           <tbody>
             {transactions.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-dim" style={{ padding: "2rem" }}>
+                <td colSpan={8} className="text-center text-dim" style={{ padding: "2rem" }}>
                   No transactions found. Upload a bank statement PDF to get started.
                 </td>
               </tr>
@@ -519,6 +535,11 @@ export default async function BankPage({
 
               return (
                 <tr key={t.id}>
+                  <td style={{ textAlign: "center" }}>
+                    {(t.status === "unallocated" || t.status === "partial") && t.deposit > 0 && (
+                      <input type="checkbox" name="ids" value={t.id} form="bundleForm" aria-label="Select deposit to bundle" />
+                    )}
+                  </td>
                   <td style={{ whiteSpace: "nowrap" }}>{t.trans_date}</td>
                   <td style={{ maxWidth: "260px", overflow: "hidden", textOverflow: "ellipsis" }} title={t.description}>
                     {t.description}

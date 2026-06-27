@@ -3,6 +3,7 @@ import {
   getBankTransaction, getBankAllocations, getPlayers,
   addBankAllocation, addBankKitPayment, removeBankAllocation,
   ensureKitOrdersForAllPlayers, getAllKitOrders,
+  getTransactionSplits, getTxnGroupRef, getBundleSummary, removeBundle,
 } from "@/lib/db";
 import { getEffectiveTariff } from "@/lib/tariff";
 import { guessPlayers } from "@/lib/match-player";
@@ -33,7 +34,10 @@ export default async function AllocatePage({
 
   const allocations = getBankAllocations(txnId);
   const players = getPlayers({ status: "Active", sort: "name", dir: "asc" });
-  const remaining = Math.round((txn.deposit - txn.allocated_amount) * 100) / 100;
+  const splitsTotal = getTransactionSplits(txnId).reduce((s, sp2) => s + sp2.amount, 0);
+  const remaining = Math.round((txn.deposit - txn.allocated_amount - splitsTotal) * 100) / 100;
+  const groupRef = getTxnGroupRef(txnId);
+  const bundle = groupRef ? getBundleSummary(groupRef) : null;
 
   // Guess which player(s) this transaction relates to
   const guessedIds = txn.deposit > 0
@@ -100,6 +104,19 @@ export default async function AllocatePage({
     }
   };
 
+  const handleUnbundle = async () => {
+    "use server";
+    if (!groupRef) redirect(`/bank/${txnId}/allocate`);
+    try {
+      removeBundle(groupRef!);
+      redirect("/bank?success=unbundled");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      if (msg.includes("NEXT_REDIRECT")) throw e;
+      redirect(`/bank/${txnId}/allocate?error=${encodeURIComponent(msg)}`);
+    }
+  };
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -125,6 +142,17 @@ export default async function AllocatePage({
       )}
       {sp.error && !["invalid", "no_kit_order"].includes(sp.error) && (
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>{sp.error}</div>
+      )}
+
+      {bundle && (
+        <div className="alert alert-info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
+          <span>
+            This deposit is part of a <strong>bundled payment</strong> ({bundle.txnCount} deposit{bundle.txnCount === 1 ? "" : "s"}, ₦{bundle.total.toLocaleString()}). To change it, reverse the bundle and re-create it.
+          </span>
+          <form action={handleUnbundle} style={{ display: "inline" }}>
+            <button type="submit" className="btn btn-sm" style={{ color: "var(--danger)", whiteSpace: "nowrap" }}>Unbundle</button>
+          </form>
+        </div>
       )}
 
       {/* ── Transaction summary ──────────────────────── */}
@@ -179,10 +207,14 @@ export default async function AllocatePage({
                   <td>{a.package || "—"}</td>
                   <td className="text-dim">{a.notes || ""}</td>
                   <td>
-                    <form action={handleRemove} style={{ display: "inline" }}>
-                      <input type="hidden" name="alloc_id" value={a.id} />
-                      <button type="submit" className="btn btn-sm">Remove</button>
-                    </form>
+                    {a.group_ref ? (
+                      <span className="text-dim" style={{ fontSize: "0.85rem" }}>bundled</span>
+                    ) : (
+                      <form action={handleRemove} style={{ display: "inline" }}>
+                        <input type="hidden" name="alloc_id" value={a.id} />
+                        <button type="submit" className="btn btn-sm">Remove</button>
+                      </form>
+                    )}
                   </td>
                 </tr>
               ))}

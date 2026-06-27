@@ -122,6 +122,20 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: add group_ref to bank_allocations / splits (bundled payments) ── */
+  try {
+    const cols = d.prepare("PRAGMA table_info(bank_allocations)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "group_ref")) {
+      d.exec("ALTER TABLE bank_allocations ADD COLUMN group_ref TEXT");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+  try {
+    const cols = d.prepare("PRAGMA table_info(bank_transaction_splits)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "group_ref")) {
+      d.exec("ALTER TABLE bank_transaction_splits ADD COLUMN group_ref TEXT");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -207,6 +221,7 @@ function ensureSchema(d: Database.Database) {
                             CHECK (kind IN ('session','kit')),
       kit_order_id          INTEGER,
       notes                 TEXT,
+      group_ref             TEXT,
       created_at            TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -216,6 +231,7 @@ function ensureSchema(d: Database.Database) {
       category    TEXT    NOT NULL,
       amount      REAL    NOT NULL CHECK (amount > 0),
       notes       TEXT,
+      group_ref   TEXT,
       created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -1142,6 +1158,180 @@ export function addBankAllocation(
     refreshTxnStatus(d, txnId);
   });
 
+  tx();
+}
+
+/* ── Bundled payments ──────────────────────────────────
+   Combine several deposits into one logical payment, then split the pooled
+   amount across player session purchases and/or income categories. Each player
+   line becomes one clean sessions_purchased row, funded by bank_allocations
+   spread across the source deposits; each category line becomes splits spread
+   the same way. Everything is tagged with a shared group_ref so the whole
+   bundle can be reversed in one go (removeBundle). */
+
+export interface BundlePlayerLine {
+  playerId: number;
+  sessions: number;
+  amount: number;
+  package: string | null;
+  notes: string | null;
+}
+export interface BundleCategoryLine {
+  category: string;
+  amount: number;
+  notes: string | null;
+}
+
+/** Bundle-aware status recompute: a deposit is fully handled when player
+ *  allocations + category splits cover its deposit. */
+function recomputeTxnCoverage(d: Database.Database, txnId: number) {
+  const txn = d.prepare("SELECT deposit FROM bank_transactions WHERE id = ?").get(txnId) as { deposit: number } | undefined;
+  if (!txn) return;
+  const alloc = (d.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM bank_allocations WHERE bank_transaction_id = ?").get(txnId) as { s: number }).s;
+  const split = (d.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM bank_transaction_splits WHERE txn_id = ?").get(txnId) as { s: number }).s;
+  const covered = alloc + split;
+  let status: string;
+  if (covered >= txn.deposit - 0.01) status = alloc > 0.01 ? "allocated" : "ignored";
+  else if (alloc > 0.01) status = "partial";
+  else if (split > 0.01) status = "ignored";
+  else status = "unallocated";
+  d.prepare("UPDATE bank_transactions SET allocated_amount = ?, status = ? WHERE id = ?")
+    .run(Math.round(alloc * 100) / 100, status, txnId);
+}
+
+export function createBundle(
+  txnIds: number[],
+  playerLines: BundlePlayerLine[],
+  categoryLines: BundleCategoryLine[],
+): { groupRef: string } {
+  const d = db();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+
+  if (txnIds.length === 0) throw new Error("No deposits selected.");
+  if (playerLines.length === 0 && categoryLines.length === 0) throw new Error("Add at least one allocation line.");
+
+  const txns = txnIds.map((id) => {
+    const t = getBankTransaction(id);
+    if (!t) throw new Error(`Transaction ${id} not found.`);
+    if (t.status === "ignored") throw new Error("A selected deposit is set aside and can't be bundled.");
+    if (t.deposit <= 0) throw new Error("Only deposits can be bundled.");
+    return { id: t.id, trans_date: t.trans_date, remaining: round2(t.deposit - t.allocated_amount) };
+  });
+  txns.sort((a, b) => (a.trans_date < b.trans_date ? -1 : a.trans_date > b.trans_date ? 1 : a.id - b.id));
+
+  const pool = round2(txns.reduce((s, t) => s + t.remaining, 0));
+  if (pool <= 0) throw new Error("The selected deposits have nothing left to allocate.");
+
+  const linesTotal = round2(
+    playerLines.reduce((s, l) => s + l.amount, 0) + categoryLines.reduce((s, l) => s + l.amount, 0)
+  );
+  if (Math.abs(linesTotal - pool) > 0.01) {
+    throw new Error(`Allocation lines total ₦${linesTotal.toLocaleString()} but the bundled deposits total ₦${pool.toLocaleString()}. They must match exactly.`);
+  }
+  for (const l of playerLines) {
+    if (!l.playerId || l.amount <= 0 || !Number.isInteger(l.sessions) || l.sessions <= 0)
+      throw new Error("Each player line needs a player, a positive amount and a whole number of sessions.");
+  }
+  for (const l of categoryLines) {
+    if (!l.category || l.amount <= 0) throw new Error("Each category line needs a category and a positive amount.");
+  }
+
+  const groupRef = "grp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  const purchaseDate = txns[0].trans_date;
+
+  const work = txns.map((t) => ({ id: t.id, remaining: t.remaining }));
+  const touched = new Set<number>();
+  const fill = (amount: number, onPiece: (txnId: number, take: number) => void) => {
+    let left = round2(amount);
+    for (const w of work) {
+      if (left <= 0.0001) break;
+      if (w.remaining <= 0.0001) continue;
+      const take = round2(Math.min(w.remaining, left));
+      onPiece(w.id, take);
+      w.remaining = round2(w.remaining - take);
+      left = round2(left - take);
+      touched.add(w.id);
+    }
+    if (left > 0.01) throw new Error("Internal distribution error — could not place the full amount.");
+  };
+
+  const insertPurchase = d.prepare(
+    `INSERT INTO sessions_purchased (player_id, purchase_date, type, amount_paid, sessions_purchased, package, notes)
+     VALUES (?, ?, 'Purchase', ?, ?, ?, ?)`
+  );
+  const insertAlloc = d.prepare(
+    `INSERT INTO bank_allocations (bank_transaction_id, player_id, amount, sessions_purchased, package, purchase_id, notes, group_ref)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertSplit = d.prepare(
+    `INSERT INTO bank_transaction_splits (txn_id, category, amount, notes, group_ref) VALUES (?, ?, ?, ?, ?)`
+  );
+
+  const tx = d.transaction(() => {
+    for (const line of playerLines) {
+      const purchaseId = insertPurchase.run(
+        line.playerId, purchaseDate, line.amount, line.sessions, line.package, line.notes
+      ).lastInsertRowid as number;
+      let first = true;
+      fill(line.amount, (txnId, take) => {
+        insertAlloc.run(txnId, line.playerId, take, first ? line.sessions : 0, line.package, purchaseId, line.notes, groupRef);
+        first = false;
+      });
+    }
+    for (const line of categoryLines) {
+      fill(line.amount, (txnId, take) => {
+        insertSplit.run(txnId, line.category, take, line.notes, groupRef);
+      });
+    }
+    for (const id of touched) recomputeTxnCoverage(d, id);
+  });
+  tx();
+
+  return { groupRef };
+}
+
+export function getTxnGroupRef(txnId: number): string | null {
+  const d = db();
+  const a = d.prepare("SELECT group_ref FROM bank_allocations WHERE bank_transaction_id = ? AND group_ref IS NOT NULL LIMIT 1").get(txnId) as { group_ref: string } | undefined;
+  if (a?.group_ref) return a.group_ref;
+  const s = d.prepare("SELECT group_ref FROM bank_transaction_splits WHERE txn_id = ? AND group_ref IS NOT NULL LIMIT 1").get(txnId) as { group_ref: string } | undefined;
+  return s?.group_ref ?? null;
+}
+
+export function getBundleSummary(groupRef: string) {
+  const d = db();
+  const allocTotal = (d.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM bank_allocations WHERE group_ref = ?").get(groupRef) as { s: number }).s;
+  const splitTotal = (d.prepare("SELECT COALESCE(SUM(amount),0) AS s FROM bank_transaction_splits WHERE group_ref = ?").get(groupRef) as { s: number }).s;
+  const txnIds = (d.prepare(
+    `SELECT bank_transaction_id AS id FROM bank_allocations WHERE group_ref = @g
+     UNION SELECT txn_id AS id FROM bank_transaction_splits WHERE group_ref = @g`
+  ).all({ g: groupRef }) as Array<{ id: number }>).map((r) => r.id);
+  return {
+    groupRef,
+    txnCount: txnIds.length,
+    total: Math.round((allocTotal + splitTotal) * 100) / 100,
+  };
+}
+
+export function removeBundle(groupRef: string) {
+  const d = db();
+  const allocs = d.prepare("SELECT id, bank_transaction_id, purchase_id FROM bank_allocations WHERE group_ref = ?").all(groupRef) as Array<{ id: number; bank_transaction_id: number; purchase_id: number | null }>;
+  const splits = d.prepare("SELECT id, txn_id FROM bank_transaction_splits WHERE group_ref = ?").all(groupRef) as Array<{ id: number; txn_id: number }>;
+  if (allocs.length === 0 && splits.length === 0) throw new Error("Bundle not found.");
+
+  const touched = new Set<number>();
+  const tx = d.transaction(() => {
+    for (const a of allocs) {
+      touched.add(a.bank_transaction_id);
+      d.prepare("DELETE FROM bank_allocations WHERE id = ?").run(a.id);
+      if (a.purchase_id) d.prepare("DELETE FROM sessions_purchased WHERE id = ?").run(a.purchase_id);
+    }
+    for (const s of splits) {
+      touched.add(s.txn_id);
+      d.prepare("DELETE FROM bank_transaction_splits WHERE id = ?").run(s.id);
+    }
+    for (const id of touched) recomputeTxnCoverage(d, id);
+  });
   tx();
 }
 
