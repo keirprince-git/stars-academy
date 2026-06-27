@@ -7,11 +7,11 @@ export async function GET() {
   await requireAuth("admin");
 
   const headers = [
-    "Month", "Income", "Expenses", "Surplus", "Session fees",
-    "Sessions held", "Attendances", "Revenue per session", "Attendance per session",
+    "Month", "Cash income", "Cash expenses", "Cash surplus", "Earned session revenue (accruals)",
+    "Sessions held", "Attendances", "Revenue per session (earned)", "Attendance per session",
   ];
   const rows = getMonthlySummary().map((r) => [
-    r.month, r.income, r.expenses, r.surplus, r.sessionFees,
+    r.month, r.income, r.expenses, r.surplus, r.earnedRevenue,
     r.sessionsHeld, r.attendances, r.revenuePerSession, r.attendancePerSession,
   ]);
 

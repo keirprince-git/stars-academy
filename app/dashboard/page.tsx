@@ -114,8 +114,8 @@ export default async function DashboardPage({
           </h3>
           <div className="summary-row">
             <a href="/accounts" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
-              <span className="chip-value" style={{ color: "var(--success)", fontSize: "1rem" }}>₦{Math.round(latest.income).toLocaleString()}</span>
-              <span className="chip-label">Income{prev && <Delta delta={Math.round(latest.income - prev.income)} money />}</span>
+              <span className="chip-value" style={{ color: "var(--success)", fontSize: "1rem" }}>₦{Math.round(latest.earnedRevenue).toLocaleString()}</span>
+              <span className="chip-label">Earned revenue{prev && <Delta delta={Math.round(latest.earnedRevenue - prev.earnedRevenue)} money />}</span>
             </a>
             <div className="chip">
               <span className="chip-value" style={{ fontSize: "1rem" }}>₦{Math.round(latest.revenuePerSession).toLocaleString()}</span>

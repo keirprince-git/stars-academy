@@ -2116,37 +2116,35 @@ export function getLedgerTransactions(
 
 export interface MonthlySummaryRow {
   month: string;                // YYYY-MM
-  income: number;
-  expenses: number;
-  surplus: number;
-  sessionFees: number;
+  income: number;               // CASH income (mirrors the I&E)
+  expenses: number;             // CASH expenses
+  surplus: number;              // CASH surplus
+  earnedRevenue: number;        // ACCRUALS session revenue earned as sessions are attended (FIFO)
   sessionsHeld: number;
   attendances: number;
-  revenuePerSession: number;    // sessionFees / sessionsHeld
+  revenuePerSession: number;    // ACCRUALS: earnedRevenue / attendances
   attendancePerSession: number; // attendances / sessionsHeld
 }
 
 /**
- * Month-by-month roll-up for trend analysis / KPIs. Income & expenses mirror the
- * I&E logic (allocations + direction-based splits); sessions held and attendances
- * come from attendance_log (a "session held" is a distinct session_date).
+ * Month-by-month roll-up for trend analysis / KPIs.
+ *
+ * Income & expenses are CASH-basis (mirroring the I&E statement). Earned revenue
+ * is ACCRUALS-basis: session income is recognised when a session is delivered
+ * (attended), not when cash is received. Each attendance consumes a player's
+ * oldest unused purchased session (FIFO) and earns that lot's price per session;
+ * cash taken in advance is deferred income until then.
  */
 export function getMonthlySummary(): MonthlySummaryRow[] {
   const d = db();
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
+  // ── Cash income/expenses by month ──
   const allocByMonth = new Map<string, number>();
   for (const r of d.prepare(
     `SELECT substr(trans_date,1,7) AS m, COALESCE(SUM(allocated_amount),0) AS total
      FROM bank_transactions WHERE allocated_amount > 0 GROUP BY m`
   ).all() as Array<{ m: string; total: number }>) allocByMonth.set(r.m, r.total);
-
-  const kitByMonth = new Map<string, number>();
-  for (const r of d.prepare(
-    `SELECT substr(bt.trans_date,1,7) AS m, COALESCE(SUM(ba.amount),0) AS total
-     FROM bank_allocations ba JOIN bank_transactions bt ON bt.id = ba.bank_transaction_id
-     WHERE ba.kind = 'kit' GROUP BY m`
-  ).all() as Array<{ m: string; total: number }>) kitByMonth.set(r.m, r.total);
 
   const incSplitByMonth = new Map<string, number>();
   const expSplitByMonth = new Map<string, number>();
@@ -2158,6 +2156,7 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
     (r.is_income ? incSplitByMonth : expSplitByMonth).set(r.m, r.total);
   }
 
+  // ── Attendance counts by month ──
   const attByMonth = new Map<string, { sessions: number; attendances: number }>();
   for (const r of d.prepare(
     `SELECT substr(session_date,1,7) AS m,
@@ -2168,29 +2167,83 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
     attByMonth.set(r.m, { sessions: r.sessions, attendances: r.attendances });
   }
 
+  // ── Earned (accruals) session revenue by month via FIFO consumption ──
+  type Purchase = { player_id: number; amount_paid: number; sessions_purchased: number };
+  const purchases = d.prepare(
+    `SELECT player_id, amount_paid, sessions_purchased
+     FROM sessions_purchased ORDER BY player_id, purchase_date, id`
+  ).all() as Purchase[];
+  const atts = d.prepare(
+    `SELECT player_id, session_date FROM attendance_log
+     WHERE attended = 1 ORDER BY player_id, session_date, id`
+  ).all() as Array<{ player_id: number; session_date: string }>;
+
+  const purchasesByPlayer = new Map<number, Purchase[]>();
+  for (const p of purchases) {
+    const arr = purchasesByPlayer.get(p.player_id) ?? [];
+    arr.push(p); purchasesByPlayer.set(p.player_id, arr);
+  }
+  const attsByPlayer = new Map<number, Array<{ session_date: string }>>();
+  for (const a of atts) {
+    const arr = attsByPlayer.get(a.player_id) ?? [];
+    arr.push(a); attsByPlayer.set(a.player_id, arr);
+  }
+
+  const earnedByMonth = new Map<string, number>();
+  for (const [playerId, playerAtts] of attsByPlayer) {
+    const rows = purchasesByPlayer.get(playerId) ?? [];
+    const lots: Array<{ remaining: number; rate: number }> = [];
+    let totalPaid = 0, totalPos = 0;
+    for (const p of rows) {
+      if (p.sessions_purchased > 0) {
+        lots.push({ remaining: p.sessions_purchased, rate: p.amount_paid > 0 ? p.amount_paid / p.sessions_purchased : 0 });
+        totalPaid += p.amount_paid > 0 ? p.amount_paid : 0;
+        totalPos += p.sessions_purchased;
+      } else if (p.sessions_purchased < 0) {
+        let remove = -p.sessions_purchased;
+        while (remove > 0 && lots.length) {
+          const take = Math.min(lots[0].remaining, remove);
+          lots[0].remaining -= take; remove -= take;
+          if (lots[0].remaining <= 0) lots.shift();
+        }
+      }
+    }
+    const avgRate = totalPos > 0 ? totalPaid / totalPos : 0;
+    for (const a of playerAtts) {
+      while (lots.length && lots[0].remaining <= 0) lots.shift();
+      let earned: number;
+      if (lots.length) {
+        earned = lots[0].rate;
+        lots[0].remaining -= 1;
+        if (lots[0].remaining <= 0) lots.shift();
+      } else {
+        earned = avgRate; // attended beyond paid credits — accrue at the player's average rate
+      }
+      const m = a.session_date.slice(0, 7);
+      earnedByMonth.set(m, (earnedByMonth.get(m) ?? 0) + earned);
+    }
+  }
+
+  // ── Merge ──
   const months = new Set<string>([
-    ...allocByMonth.keys(), ...kitByMonth.keys(),
-    ...incSplitByMonth.keys(), ...expSplitByMonth.keys(), ...attByMonth.keys(),
+    ...allocByMonth.keys(), ...incSplitByMonth.keys(), ...expSplitByMonth.keys(),
+    ...attByMonth.keys(), ...earnedByMonth.keys(),
   ]);
 
   return [...months].filter(Boolean).sort().map((m) => {
-    const alloc = allocByMonth.get(m) ?? 0;
-    const kit = kitByMonth.get(m) ?? 0;
-    const incSplit = incSplitByMonth.get(m) ?? 0;
-    const expSplit = expSplitByMonth.get(m) ?? 0;
+    const income = round2((allocByMonth.get(m) ?? 0) + (incSplitByMonth.get(m) ?? 0));
+    const expenses = round2(expSplitByMonth.get(m) ?? 0);
     const att = attByMonth.get(m) ?? { sessions: 0, attendances: 0 };
-    const income = round2(alloc + incSplit);
-    const expenses = round2(expSplit);
-    const sessionFees = round2(alloc - kit);
+    const earnedRevenue = round2(earnedByMonth.get(m) ?? 0);
     return {
       month: m,
       income,
       expenses,
       surplus: round2(income - expenses),
-      sessionFees,
+      earnedRevenue,
       sessionsHeld: att.sessions,
       attendances: att.attendances,
-      revenuePerSession: att.sessions > 0 ? round2(sessionFees / att.sessions) : 0,
+      revenuePerSession: att.attendances > 0 ? round2(earnedRevenue / att.attendances) : 0,
       attendancePerSession: att.sessions > 0 ? round2(att.attendances / att.sessions) : 0,
     };
   });
