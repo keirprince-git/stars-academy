@@ -1176,6 +1176,12 @@ export interface BundlePlayerLine {
   package: string | null;
   notes: string | null;
 }
+export interface BundleKitLine {
+  playerId: number;
+  kitOrderId: number;
+  amount: number;
+  notes: string | null;
+}
 export interface BundleCategoryLine {
   category: string;
   amount: number;
@@ -1202,13 +1208,14 @@ function recomputeTxnCoverage(d: Database.Database, txnId: number) {
 export function createBundle(
   txnIds: number[],
   playerLines: BundlePlayerLine[],
+  kitLines: BundleKitLine[],
   categoryLines: BundleCategoryLine[],
 ): { groupRef: string } {
   const d = db();
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
   if (txnIds.length === 0) throw new Error("No deposits selected.");
-  if (playerLines.length === 0 && categoryLines.length === 0) throw new Error("Add at least one allocation line.");
+  if (playerLines.length === 0 && kitLines.length === 0 && categoryLines.length === 0) throw new Error("Add at least one allocation line.");
 
   const txns = txnIds.map((id) => {
     const t = getBankTransaction(id);
@@ -1223,7 +1230,9 @@ export function createBundle(
   if (pool <= 0) throw new Error("The selected deposits have nothing left to allocate.");
 
   const linesTotal = round2(
-    playerLines.reduce((s, l) => s + l.amount, 0) + categoryLines.reduce((s, l) => s + l.amount, 0)
+    playerLines.reduce((s, l) => s + l.amount, 0)
+    + kitLines.reduce((s, l) => s + l.amount, 0)
+    + categoryLines.reduce((s, l) => s + l.amount, 0)
   );
   if (Math.abs(linesTotal - pool) > 0.01) {
     throw new Error(`Allocation lines total ₦${linesTotal.toLocaleString()} but the bundled deposits total ₦${pool.toLocaleString()}. They must match exactly.`);
@@ -1231,6 +1240,10 @@ export function createBundle(
   for (const l of playerLines) {
     if (!l.playerId || l.amount <= 0 || !Number.isInteger(l.sessions) || l.sessions <= 0)
       throw new Error("Each player line needs a player, a positive amount and a whole number of sessions.");
+  }
+  for (const l of kitLines) {
+    if (!l.playerId || !l.kitOrderId || l.amount <= 0)
+      throw new Error("Each kit line needs a player with a kit order and a positive amount.");
   }
   for (const l of categoryLines) {
     if (!l.category || l.amount <= 0) throw new Error("Each category line needs a category and a positive amount.");
@@ -1263,6 +1276,10 @@ export function createBundle(
     `INSERT INTO bank_allocations (bank_transaction_id, player_id, amount, sessions_purchased, package, purchase_id, notes, group_ref)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const insertKitAlloc = d.prepare(
+    `INSERT INTO bank_allocations (bank_transaction_id, player_id, amount, sessions_purchased, package, purchase_id, kind, kit_order_id, notes, group_ref)
+     VALUES (?, ?, ?, 0, 'Kit', NULL, 'kit', ?, ?, ?)`
+  );
   const insertSplit = d.prepare(
     `INSERT INTO bank_transaction_splits (txn_id, category, amount, notes, group_ref) VALUES (?, ?, ?, ?, ?)`
   );
@@ -1277,6 +1294,12 @@ export function createBundle(
         insertAlloc.run(txnId, line.playerId, take, first ? line.sessions : 0, line.package, purchaseId, line.notes, groupRef);
         first = false;
       });
+    }
+    for (const line of kitLines) {
+      fill(line.amount, (txnId, take) => {
+        insertKitAlloc.run(txnId, line.playerId, take, line.kitOrderId, line.notes, groupRef);
+      });
+      setKitOrderStatus(line.kitOrderId, "paid");
     }
     for (const line of categoryLines) {
       fill(line.amount, (txnId, take) => {
@@ -1315,7 +1338,7 @@ export function getBundleSummary(groupRef: string) {
 
 export function removeBundle(groupRef: string) {
   const d = db();
-  const allocs = d.prepare("SELECT id, bank_transaction_id, purchase_id FROM bank_allocations WHERE group_ref = ?").all(groupRef) as Array<{ id: number; bank_transaction_id: number; purchase_id: number | null }>;
+  const allocs = d.prepare("SELECT id, bank_transaction_id, purchase_id, kind, kit_order_id FROM bank_allocations WHERE group_ref = ?").all(groupRef) as Array<{ id: number; bank_transaction_id: number; purchase_id: number | null; kind: string; kit_order_id: number | null }>;
   const splits = d.prepare("SELECT id, txn_id FROM bank_transaction_splits WHERE group_ref = ?").all(groupRef) as Array<{ id: number; txn_id: number }>;
   if (allocs.length === 0 && splits.length === 0) throw new Error("Bundle not found.");
 
@@ -1325,6 +1348,7 @@ export function removeBundle(groupRef: string) {
       touched.add(a.bank_transaction_id);
       d.prepare("DELETE FROM bank_allocations WHERE id = ?").run(a.id);
       if (a.purchase_id) d.prepare("DELETE FROM sessions_purchased WHERE id = ?").run(a.purchase_id);
+      if (a.kind === "kit" && a.kit_order_id) setKitOrderStatus(a.kit_order_id, "confirmed");
     }
     for (const s of splits) {
       touched.add(s.txn_id);

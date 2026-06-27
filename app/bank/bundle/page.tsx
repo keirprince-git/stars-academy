@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
-import { getBankTransaction, getPlayers, createBundle } from "@/lib/db";
+import { getBankTransaction, getPlayers, createBundle, getKitOrderForPlayer, ensureKitOrdersForAllPlayers } from "@/lib/db";
 import { getAllCategories } from "@/lib/categories";
+import { KIT_YEAR } from "@/lib/kit";
 import { redirect } from "next/navigation";
 
 export default async function BundlePage({
@@ -36,8 +37,9 @@ export default async function BundlePage({
   const pool = round2(deposits.reduce((s, t) => s + t.remaining, 0));
   const eligibleIds = deposits.map((t) => t.id);
 
+  ensureKitOrdersForAllPlayers(KIT_YEAR);
   const players = getPlayers({ status: "Active", sort: "name", dir: "asc" });
-  const incomeCategories = getAllCategories().filter((c) => c.type === "income");
+  const incomeCategories = getAllCategories().filter((c) => c.type === "income" && c.value !== "kit_sales");
   const errorMsg = typeof sp.error === "string" ? sp.error : null;
 
   const handleSave = async (formData: FormData) => {
@@ -66,9 +68,22 @@ export default async function BundlePage({
       j++;
     }
 
+    const kitLines: Array<{ playerId: number; kitOrderId: number; amount: number; notes: string | null }> = [];
+    let k = 0;
+    while (formData.has(`k_player_${k}`)) {
+      const playerId = parseInt(formData.get(`k_player_${k}`) as string, 10);
+      const amount = parseFloat(formData.get(`k_amount_${k}`) as string);
+      const notes = ((formData.get(`k_notes_${k}`) as string) || "").trim() || null;
+      if (playerId && !isNaN(amount) && amount > 0) {
+        const ko = getKitOrderForPlayer(playerId, KIT_YEAR);
+        kitLines.push({ playerId, kitOrderId: ko ? ko.id : 0, amount, notes });
+      }
+      k++;
+    }
+
     const qs = eligibleIds.map((id) => `ids=${id}`).join("&");
     try {
-      createBundle(eligibleIds, playerLines, categoryLines);
+      createBundle(eligibleIds, playerLines, kitLines, categoryLines);
       redirect("/bank?success=bundled");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error";
@@ -161,6 +176,37 @@ export default async function BundlePage({
                   </td>
                   <td>
                     <input name={`p_pkg_${i}`} type="text" placeholder="e.g. 8 sessions" style={{ width: "100%" }} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <h3 style={{ fontSize: "0.95rem", margin: "0.5rem 0" }}>Kit payments</h3>
+          <table style={{ marginBottom: "1rem" }}>
+            <thead>
+              <tr>
+                <th style={{ width: "48%" }}>Player</th>
+                <th className="text-right" style={{ width: "20%" }}>Amount (₦)</th>
+                <th>Notes (optional)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 2 }).map((_, k) => (
+                <tr key={k}>
+                  <td>
+                    <select name={`k_player_${k}`} defaultValue="" style={{ width: "100%" }}>
+                      <option value="">— Select player —</option>
+                      {players.map((p) => (
+                        <option key={p.id} value={p.id}>{p.code} — {p.name}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="text-right">
+                    <input name={`k_amount_${k}`} type="number" min="0" step="0.01" data-bundle-amount style={{ width: "100%", textAlign: "right" }} />
+                  </td>
+                  <td>
+                    <input name={`k_notes_${k}`} type="text" placeholder="e.g. 2026 kit" style={{ width: "100%" }} />
                   </td>
                 </tr>
               ))}
