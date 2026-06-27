@@ -3,6 +3,7 @@ import { getBankTransaction, getPlayers, ensureKitOrdersForAllPlayers } from "@/
 import { getAllCategories } from "@/lib/categories";
 import { KIT_YEAR } from "@/lib/kit";
 import { saveBundleAction } from "./actions";
+import BundleTotals from "./BundleTotals";
 
 export default async function BundlePage({
   searchParams,
@@ -204,9 +205,7 @@ export default async function BundlePage({
             </div>
           )}
 
-          <div style={{ marginBottom: "0.75rem", fontWeight: 600 }}>
-            Pool total: ₦{pool.toLocaleString()} — the line amounts must add up to this exactly.
-          </div>
+          <BundleTotals pool={pool} />
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button type="submit" className="btn btn-primary">Save bundle</button>
