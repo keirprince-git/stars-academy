@@ -2122,7 +2122,7 @@ export interface MonthlySummaryRow {
   earnedRevenue: number;        // ACCRUALS session revenue earned as sessions are attended (FIFO)
   sessionsHeld: number;
   attendances: number;
-  revenuePerSession: number;    // ACCRUALS: earnedRevenue / attendances
+  revenuePerSession: number;    // ACCRUALS: earnedRevenue / sessionsHeld (per training session)
   attendancePerSession: number; // attendances / sessionsHeld
 }
 
@@ -2243,7 +2243,7 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
       earnedRevenue,
       sessionsHeld: att.sessions,
       attendances: att.attendances,
-      revenuePerSession: att.attendances > 0 ? round2(earnedRevenue / att.attendances) : 0,
+      revenuePerSession: att.sessions > 0 ? round2(earnedRevenue / att.sessions) : 0,
       attendancePerSession: att.sessions > 0 ? round2(att.attendances / att.sessions) : 0,
     };
   });
