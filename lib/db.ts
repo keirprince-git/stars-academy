@@ -411,6 +411,27 @@ export function deleteCategory(id: number) {
   db().prepare("DELETE FROM categories WHERE id = ?").run(id);
 }
 
+/**
+ * Merge one category into another: reassign every transaction (both the split
+ * records and the legacy category field) from the source category to the target,
+ * then delete the source. Atomic. The transactions keep their own income/expense
+ * direction (set by deposit vs withdrawal), so this just consolidates the label.
+ */
+export function mergeCategory(sourceId: number, targetId: number) {
+  const d = db();
+  const src = d.prepare("SELECT value FROM categories WHERE id = ?").get(sourceId) as { value: string } | undefined;
+  const tgt = d.prepare("SELECT value FROM categories WHERE id = ?").get(targetId) as { value: string } | undefined;
+  if (!src || !tgt) throw new Error("Category not found.");
+  if (src.value === tgt.value) throw new Error("Cannot merge a category into itself.");
+
+  const tx = d.transaction(() => {
+    d.prepare("UPDATE bank_transaction_splits SET category = ? WHERE category = ?").run(tgt.value, src.value);
+    d.prepare("UPDATE bank_transactions SET category = ? WHERE category = ?").run(tgt.value, src.value);
+    d.prepare("DELETE FROM categories WHERE id = ?").run(sourceId);
+  });
+  tx();
+}
+
 /* ── Tariff management ────────────────────────────── */
 
 const DEFAULT_TARIFFS = [

@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { getCategories, addCategory, updateCategory, deleteCategory } from "@/lib/db";
+import { getCategories, addCategory, updateCategory, deleteCategory, mergeCategory } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 /** Derive a URL-safe category code from a human label. */
@@ -78,6 +78,23 @@ export default async function CategoriesPage({
     redirect("/accounts/categories?success=deleted");
   };
 
+  const handleMerge = async (formData: FormData) => {
+    "use server";
+    const sourceId = parseInt(formData.get("source_id") as string, 10);
+    const targetId = parseInt(formData.get("target_id") as string, 10);
+    if (!sourceId || !targetId || sourceId === targetId) {
+      redirect("/accounts/categories?error=Pick%20two%20different%20categories%20to%20merge.");
+    }
+    try {
+      mergeCategory(sourceId, targetId);
+      redirect("/accounts/categories?success=merged");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      if (msg.includes("NEXT_REDIRECT")) throw e;
+      redirect(`/accounts/categories?error=${encodeURIComponent(msg)}`);
+    }
+  };
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -98,6 +115,11 @@ export default async function CategoriesPage({
       {sp.success === "deleted" && (
         <div className="alert alert-success">
           Category deleted. Any transactions using it have been uncategorised.
+        </div>
+      )}
+      {sp.success === "merged" && (
+        <div className="alert alert-success">
+          Categories merged. All transactions now sit under the target category.
         </div>
       )}
       {sp.error && (
@@ -220,6 +242,37 @@ export default async function CategoriesPage({
           </div>
           <p className="text-dim" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
             A short internal code is generated automatically from the label.
+          </p>
+        </form>
+      </div>
+
+      {/* ── Merge categories ───────────────────────── */}
+      <div className="card" style={{ marginTop: "1rem" }}>
+        <h2 style={{ marginBottom: "0.75rem" }}>Merge Categories</h2>
+        <form action={handleMerge}>
+          <div className="form-row" style={{ alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div className="form-group">
+              <label htmlFor="source_id">Merge this category…</label>
+              <select id="source_id" name="source_id" required defaultValue="">
+                <option value="">— Select —</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>{c.label} ({c.type})</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="target_id">…into this one</label>
+              <select id="target_id" name="target_id" required defaultValue="">
+                <option value="">— Select —</option>
+                {categories.map(c => (
+                  <option key={c.id} value={c.id}>{c.label} ({c.type})</option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ marginBottom: "0.25rem" }}>Merge</button>
+          </div>
+          <p className="text-dim" style={{ fontSize: "0.8rem", marginTop: "0.4rem" }}>
+            Every transaction in the first category is moved to the second, then the first category is removed. This can&apos;t be undone.
           </p>
         </form>
       </div>
