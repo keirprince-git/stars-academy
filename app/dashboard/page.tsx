@@ -119,7 +119,7 @@ export default async function DashboardPage({
             </a>
             <div className="chip">
               <span className="chip-value" style={{ fontSize: "1rem" }}>₦{Math.round(latest.revenuePerSession).toLocaleString()}</span>
-              <span className="chip-label">Revenue / session</span>
+              <span className="chip-label">Revenue / session{prev && <Delta delta={Math.round(latest.revenuePerSession - prev.revenuePerSession)} money />}</span>
             </div>
             <div className="chip">
               <span className="chip-value">{latest.attendances}</span>
