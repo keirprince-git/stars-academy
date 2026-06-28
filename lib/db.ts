@@ -2189,16 +2189,27 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
     arr.push(a); attsByPlayer.set(a.player_id, arr);
   }
 
+  // Academy-wide average price per session actually paid — used to value
+  // attendances for players whose payment history was never imported (e.g. older
+  // cohorts), so the earned-revenue trend is complete rather than reading zero.
+  let acadPaid = 0, acadSessions = 0;
+  for (const p of purchases) {
+    if (p.sessions_purchased > 0 && p.amount_paid > 0) {
+      acadPaid += p.amount_paid; acadSessions += p.sessions_purchased;
+    }
+  }
+  const academyAvgRate = acadSessions > 0 ? acadPaid / acadSessions : 0;
+
   const earnedByMonth = new Map<string, number>();
   for (const [playerId, playerAtts] of attsByPlayer) {
     const rows = purchasesByPlayer.get(playerId) ?? [];
     const lots: Array<{ remaining: number; rate: number }> = [];
-    let totalPaid = 0, totalPos = 0;
+    let paidNum = 0, paidSessions = 0, totalPos = 0;
     for (const p of rows) {
       if (p.sessions_purchased > 0) {
         lots.push({ remaining: p.sessions_purchased, rate: p.amount_paid > 0 ? p.amount_paid / p.sessions_purchased : 0 });
-        totalPaid += p.amount_paid > 0 ? p.amount_paid : 0;
         totalPos += p.sessions_purchased;
+        if (p.amount_paid > 0) { paidNum += p.amount_paid; paidSessions += p.sessions_purchased; }
       } else if (p.sessions_purchased < 0) {
         let remove = -p.sessions_purchased;
         while (remove > 0 && lots.length) {
@@ -2208,7 +2219,13 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
         }
       }
     }
-    const avgRate = totalPos > 0 ? totalPaid / totalPos : 0;
+    // Fallback rate when lots are exhausted: a player who has purchase records
+    // (even all-free scholarships) keeps their own average — so scholarships
+    // stay at nil; a player with no purchase records at all is valued at the
+    // academy-wide average so historic attendance isn't lost.
+    const fallbackRate = totalPos > 0
+      ? (paidSessions > 0 ? paidNum / paidSessions : 0)
+      : academyAvgRate;
     for (const a of playerAtts) {
       while (lots.length && lots[0].remaining <= 0) lots.shift();
       let earned: number;
@@ -2217,7 +2234,7 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
         lots[0].remaining -= 1;
         if (lots[0].remaining <= 0) lots.shift();
       } else {
-        earned = avgRate; // attended beyond paid credits — accrue at the player's average rate
+        earned = fallbackRate;
       }
       const m = a.session_date.slice(0, 7);
       earnedByMonth.set(m, (earnedByMonth.get(m) ?? 0) + earned);
