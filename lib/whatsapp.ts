@@ -7,6 +7,7 @@ export interface ChaseMessageParams {
   playerName: string;
   balance: number;          // sessions remaining (can be negative)
   parentName?: string | null;
+  ageGroup?: string | null; // "Upper" | "Lower" — selects the tariff prices
 }
 
 /**
@@ -22,8 +23,9 @@ export interface ChaseMessageParams {
  *   {{bank_account}} — account number from settings
  *   {{coach_phone}}  — coach phone from settings
  *   {{parent}}       — parent's first name (or "there")
+ *   {{tariff}}       — the player's current session prices (by age group)
  */
-export function buildChaseMessage({ playerName, balance, parentName }: ChaseMessageParams): string {
+export function buildChaseMessage({ playerName, balance, parentName, ageGroup }: ChaseMessageParams): string {
   const settings = getAllSettings();
 
   const balanceLine = balance < 0
@@ -34,9 +36,17 @@ export function buildChaseMessage({ playerName, balance, parentName }: ChaseMess
 
   const parentFirst = parentName ? parentName.split(/\s+/)[0] : "there";
 
+  const group = ageGroup === "Lower" ? "Lower" : "Upper";
+  const tariffLines = getCurrentTariff().map((pkg) => {
+    const price = pkg.price[group];
+    const perSession = Math.round(price / pkg.sessions);
+    return `• ${pkg.label}: ₦${price.toLocaleString()} (₦${perSession.toLocaleString()}/session)`;
+  }).join("\n");
+
   let message = settings.chase_template || "";
   message = message.replace(/\{\{player\}\}/g, playerName);
   message = message.replace(/\{\{balance_line\}\}/g, balanceLine);
+  message = message.replace(/\{\{tariff\}\}/g, tariffLines);
   message = message.replace(/\{\{bank_name\}\}/g, settings.bank_name || "");
   message = message.replace(/\{\{bank_bank\}\}/g, settings.bank_bank || "");
   message = message.replace(/\{\{bank_account\}\}/g, settings.bank_account || "");

@@ -189,6 +189,7 @@ export default async function SettingsPage({
     playerName: "Amjad",
     balance: -5,
     parentName: "Mohammed Al-Rashid",
+    ageGroup: "Upper",
   });
 
   return (

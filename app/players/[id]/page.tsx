@@ -151,6 +151,7 @@ export default async function PlayerDetailPage({
                 playerName: player.name,
                 balance,
                 parentName: player.parent_name,
+                ageGroup: player.source ?? null,
               })
             )}
             target="_blank"
