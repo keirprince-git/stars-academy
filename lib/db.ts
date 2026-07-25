@@ -5,7 +5,7 @@ import type { Player, DashboardRow, User, Session, BankTransaction, BankAllocati
 
 /* ── Connection (singleton) ─────────────────────────── */
 
-const DB_PATH = process.env.DATABASE_PATH
+export const DB_PATH = process.env.DATABASE_PATH
   ? path.resolve(process.env.DATABASE_PATH)
   : path.join(process.cwd(), "stars_academy.db");
 let _db: Database.Database | null = null;
