@@ -62,20 +62,38 @@ export default async function BankPage({
 
       const batch = `import-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
 
-      // Duplicate check: date + the bank's running balance (in kobo). Statements
-      // here are cumulative, so every upload overlaps the previous ones — the
-      // dedup is the control that stops re-importing what's already loaded. The
-      // balance is the bank's own figure: identical for a given transaction on
-      // every statement and effectively unique per line, so it dedups reliably
-      // regardless of how TAJ's concatenated description parses. (Balance was
-      // previously avoided because an old parser corrupted some withdrawal-line
-      // balances; that parser is fixed and the data has been reconciled end-to-
-      // end, so the stored balances are now trustworthy.)
+      // Duplicate check: date + amount (deposit/withdrawal, in kobo), independent
+      // of the running balance and of row order. Statements here are cumulative,
+      // so every upload overlaps the previous ones — the dedup is the control that
+      // stops re-importing what's already loaded.
+      //
+      // The running balance CANNOT be part of the key: TAJ re-sequences same-day
+      // clusters between statements, which changes the running balance of an
+      // already-imported line without it being a new transaction. (Proven on
+      // 31-Aug-2026: a 22-Jun-2026 ₦53.75 charge moved from after the ₦679,000
+      // transfer to before it, changing its balance from 3,217,498.50 to
+      // 3,896,498.50, so a balance-based key missed it and re-imported it.)
+      //
+      // Amount can legitimately repeat within a day (two identical charges, two
+      // equal session payments), so we dedup by COUNTING how many of each
+      // date+amount key already exist and only importing occurrences beyond that
+      // count — re-sequenced rows are skipped, genuinely new same-day/same-amount
+      // rows are kept, all without depending on how the description parses.
       const existing = getBankTransactions();
-      const dedupKey = (t: { trans_date: string; balance: number }) =>
-        `${t.trans_date}|${Math.round(t.balance * 100)}`;
-      const existingKeys = new Set(existing.map(dedupKey));
-      const newTxns = result.transactions.filter((t) => !existingKeys.has(dedupKey(t)));
+      const dedupKey = (t: { trans_date: string; deposit: number; withdrawal: number }) =>
+        `${t.trans_date}|${Math.round(t.deposit * 100)}|${Math.round(t.withdrawal * 100)}`;
+      const remaining = new Map<string, number>();
+      for (const t of existing) {
+        const k = dedupKey(t);
+        remaining.set(k, (remaining.get(k) ?? 0) + 1);
+      }
+      // Preserve statement order so inserted rows keep the bank's sequence.
+      const newTxns = result.transactions.filter((t) => {
+        const k = dedupKey(t);
+        const n = remaining.get(k) ?? 0;
+        if (n > 0) { remaining.set(k, n - 1); return false; } // already imported
+        return true;
+      });
 
       if (newTxns.length === 0) {
         redirect("/bank?error=all_duplicates");
