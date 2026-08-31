@@ -41,6 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                   {auth.role === "admin" && <NavLink href="/accounts" label="Accounts" />}
                   {auth.role === "admin" && <NavLink href="/kit"      label="Kit"      />}
                   {auth.role === "admin" && <NavLink href="/settings" label="Settings" />}
+                  {auth.role === "admin" && <NavLink href="/admin"    label="Admin"    />}
                   <a href="/account" className="who" title="Account settings">{auth.username}</a>
                   <LogoutButton />
                 </nav>
