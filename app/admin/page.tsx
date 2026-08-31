@@ -25,7 +25,7 @@ export default async function AdminPage() {
           if someone is recording attendance at the time.
         </p>
 
-        <a href="/api/backup" className="btn-primary" download>
+        <a href="/api/backup" className="btn btn-primary" download>
           Download backup
         </a>
 
