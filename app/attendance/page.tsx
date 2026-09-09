@@ -312,7 +312,7 @@ export default async function AttendancePage({
         ) : (
           <>
             <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · active players, most regular first. ✓ = attended.
+              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · active players plus anyone who attended in the period, most regular first. ✓ = attended.
             </p>
             <div className="card" style={{ padding: 0, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", fontSize: "0.85rem" }}>
@@ -336,6 +336,9 @@ export default async function AttendancePage({
                     <tr key={p.id} style={{ background: ri % 2 ? "var(--surface-2)" : "transparent" }}>
                       <td style={{ position: "sticky", left: 0, background: ri % 2 ? "var(--surface-2)" : "var(--surface)", whiteSpace: "nowrap" }}>
                         <a href={`/players/${p.id}`}>{p.name}</a>
+                        {p.status !== "Active" && (
+                          <span className="text-dim" style={{ fontSize: "0.72rem" }}> · {p.status.toLowerCase()}</span>
+                        )}
                       </td>
                       {p.cells.map((on, ci) => (
                         <td key={ci} className="text-center" style={{

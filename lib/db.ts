@@ -939,15 +939,18 @@ export function getRecentSessions(limit = 20) {
 
 export interface AttendanceGrid {
   sessions: string[]; // ISO dates, chronological (oldest -> newest)
-  players: { id: number; code: string; name: string; cells: boolean[]; total: number }[];
-  sessionTotals: number[]; // attended count per session, among the active players shown
+  players: { id: number; code: string; name: string; status: string; cells: boolean[]; total: number }[];
+  sessionTotals: number[]; // true turnout per session (all attendees, whatever their current status)
 }
 
 /**
- * At-a-glance attendance matrix: active players (rows) x the last `nSessions`
- * recorded sessions (columns), a cell true where the player attended. Rows are
- * ordered by attendance count (most regular first) so who's coming — and who has
- * dropped off — is obvious. Session dates are returned oldest-first for L->R display.
+ * At-a-glance attendance matrix: last `nSessions` sessions (columns) x players
+ * (rows), a cell true where the player attended. Rows are the UNION of current
+ * active players AND anyone who attended in the window even if since made
+ * Inactive/Left — so every attendance is represented and the column totals are
+ * the true turnout, while current active players who aren't coming still show
+ * (0). Non-active attendees carry their status so they can be flagged. Ordered
+ * most-regular-first; session dates oldest-first for L->R display.
  */
 export function getAttendanceGrid(nSessions = 12): AttendanceGrid {
   const d = db();
@@ -955,21 +958,29 @@ export function getAttendanceGrid(nSessions = 12): AttendanceGrid {
     `SELECT DISTINCT session_date FROM attendance_log ORDER BY session_date DESC LIMIT ?`
   ).all(nSessions) as { session_date: string }[]).map((r) => r.session_date).reverse();
 
-  const players = getActivePlayers();
+  const active = getActivePlayers();
   if (dates.length === 0) {
-    return { sessions: [], players: players.map((p) => ({ ...p, cells: [], total: 0 })), sessionTotals: [] };
+    return { sessions: [], players: active.map((p) => ({ ...p, status: "Active", cells: [], total: 0 })), sessionTotals: [] };
   }
 
   const placeholders = dates.map(() => "?").join(",");
   const attended = d.prepare(
-    `SELECT player_id, session_date FROM attendance_log
-     WHERE attended = 1 AND session_date IN (${placeholders})`
-  ).all(...dates) as { player_id: number; session_date: string }[];
+    `SELECT a.player_id, a.session_date, p.code, p.name, p.play_status
+     FROM attendance_log a JOIN players p ON p.id = a.player_id
+     WHERE a.attended = 1 AND a.session_date IN (${placeholders})`
+  ).all(...dates) as { player_id: number; session_date: string; code: string; name: string; play_status: string }[];
   const seen = new Set(attended.map((a) => `${a.player_id}|${a.session_date}`));
 
-  const rows = players.map((p) => {
+  // Union: current active players + anyone who attended in the window.
+  const pmap = new Map<number, { id: number; code: string; name: string; status: string }>();
+  for (const p of active) pmap.set(p.id, { id: p.id, code: p.code, name: p.name, status: "Active" });
+  for (const a of attended) if (!pmap.has(a.player_id)) {
+    pmap.set(a.player_id, { id: a.player_id, code: a.code, name: a.name, status: a.play_status });
+  }
+
+  const rows = [...pmap.values()].map((p) => {
     const cells = dates.map((dt) => seen.has(`${p.id}|${dt}`));
-    return { id: p.id, code: p.code, name: p.name, cells, total: cells.filter(Boolean).length };
+    return { ...p, cells, total: cells.filter(Boolean).length };
   });
   rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
