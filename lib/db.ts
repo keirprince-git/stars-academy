@@ -2270,18 +2270,33 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
     arr.push(a); attsByPlayer.set(a.player_id, arr);
   }
 
-  // Recognise revenue only where there is a recorded payment behind the session
-  // credit consumed. Sessions with no recorded amount — opening balances,
-  // amount-less purchases, scholarships — earn nothing, and attendance beyond
-  // purchased credits earns nothing until paid. No estimation: the figure ties
-  // to recorded cash, and historic gaps fill in as missing amounts are entered.
+  // Recognise session revenue on DELIVERY: every attended session earns what it
+  // will be charged, regardless of whether the cash/credit has been recorded yet
+  // (true accruals — cash timing is irrelevant). Where a delivery consumes an
+  // actual paid purchase, use that purchase's per-session price (FIFO); otherwise
+  // value it at the player's own average paid rate, or the academy-wide average
+  // if the player has no paid purchases. Scholarship players earn nil (free
+  // places). ₦0 opening-balance / amount-less credits are NOT treated as priced —
+  // those deliveries fall to the average rate rather than earning nothing.
+  const scholarshipIds = new Set<number>(
+    (d.prepare("SELECT id FROM players WHERE scholarship = 1").all() as { id: number }[]).map((r) => r.id)
+  );
+  let acadPaid = 0, acadSessions = 0;
+  for (const p of purchases) {
+    if (p.sessions_purchased > 0 && p.amount_paid > 0) { acadPaid += p.amount_paid; acadSessions += p.sessions_purchased; }
+  }
+  const academyAvgRate = acadSessions > 0 ? acadPaid / acadSessions : 0;
+
   const earnedByMonth = new Map<string, number>();
   for (const [playerId, playerAtts] of attsByPlayer) {
+    if (scholarshipIds.has(playerId)) continue; // free place — earns nil
     const rows = purchasesByPlayer.get(playerId) ?? [];
     const lots: Array<{ remaining: number; rate: number }> = [];
+    let paidAmt = 0, paidSessions = 0;
     for (const p of rows) {
-      if (p.sessions_purchased > 0) {
-        lots.push({ remaining: p.sessions_purchased, rate: p.amount_paid > 0 ? p.amount_paid / p.sessions_purchased : 0 });
+      if (p.sessions_purchased > 0 && p.amount_paid > 0) {
+        lots.push({ remaining: p.sessions_purchased, rate: p.amount_paid / p.sessions_purchased });
+        paidAmt += p.amount_paid; paidSessions += p.sessions_purchased;
       } else if (p.sessions_purchased < 0) {
         let remove = -p.sessions_purchased;
         while (remove > 0 && lots.length) {
@@ -2291,12 +2306,17 @@ export function getMonthlySummary(): MonthlySummaryRow[] {
         }
       }
     }
+    const fallbackRate = paidSessions > 0 ? paidAmt / paidSessions : academyAvgRate;
     for (const a of playerAtts) {
       while (lots.length && lots[0].remaining <= 0) lots.shift();
-      if (!lots.length) continue; // no recorded payment behind this session — earn nil
-      const earned = lots[0].rate;
-      lots[0].remaining -= 1;
-      if (lots[0].remaining <= 0) lots.shift();
+      let earned: number;
+      if (lots.length) {
+        earned = lots[0].rate;
+        lots[0].remaining -= 1;
+        if (lots[0].remaining <= 0) lots.shift();
+      } else {
+        earned = fallbackRate; // delivered beyond paid credit / on opening balance — accrue at charge rate
+      }
       const m = a.session_date.slice(0, 7);
       earnedByMonth.set(m, (earnedByMonth.get(m) ?? 0) + earned);
     }
