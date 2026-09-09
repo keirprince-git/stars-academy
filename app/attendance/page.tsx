@@ -253,13 +253,13 @@ export default async function AttendancePage({
 
         {auth.role === "admin" && (
           <div className="card">
-            <form action={handleChangeDate} className="form-row" style={{ alignItems: "flex-end", marginBottom: 0 }}>
+            <form action={handleChangeDate} style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", flexWrap: "wrap", marginBottom: 0 }}>
               <input type="hidden" name="from_date" value={sp.date} />
-              <div className="form-group">
+              <div className="form-group" style={{ maxWidth: 200 }}>
                 <label htmlFor="to_date">Change session date to</label>
                 <input id="to_date" name="to_date" type="date" defaultValue={sp.date} required />
               </div>
-              <button type="submit" className="btn btn-sm" style={{ marginBottom: "0.25rem" }}>Move session</button>
+              <button type="submit" className="btn btn-sm btn-primary" style={{ marginBottom: "0.1rem" }}>Move session</button>
             </form>
           </div>
         )}
