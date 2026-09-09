@@ -233,6 +233,11 @@ export default async function PlayerDetailPage({
           Sessions transferred successfully.
         </div>
       )}
+      {sp.success === "amount" && (
+        <div className="alert alert-success">
+          Purchase amount saved.
+        </div>
+      )}
       {sp.error === "invalid" && (
         <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Please enter a valid number of sessions.</div>
       )}
