@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getAttendanceGrid, deleteAttendanceSession } from "@/lib/db";
+import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getAttendanceGrid, deleteAttendanceSession, changeSessionDate } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 function fmtCol(iso: string) {
@@ -48,6 +48,22 @@ export default async function AttendancePage({
     const sessionDate = formData.get("session_date") as string;
     if (sessionDate) deleteAttendanceSession(sessionDate);
     redirect(`/attendance?view=history&success=deleted&date=${sessionDate}`);
+  };
+
+  // Move a session to a different date (admin only) - for a wrong date entered
+  const handleChangeDate = async (formData: FormData) => {
+    "use server";
+    await requireAuth("admin");
+    const fromDate = formData.get("from_date") as string;
+    const toDate = formData.get("to_date") as string;
+    if (!toDate || toDate === fromDate) {
+      redirect(`/attendance?view=session&date=${fromDate}`);
+    }
+    const res = changeSessionDate(fromDate, toDate);
+    if ("error" in res) {
+      redirect(`/attendance?view=session&date=${fromDate}&error=date_taken`);
+    }
+    redirect(`/attendance?view=session&date=${toDate}&success=moved&from=${fromDate}`);
   };
 
   // ── Record view ─────────────────────────────────────
@@ -215,6 +231,15 @@ export default async function AttendancePage({
           </div>
         </div>
 
+        {sp.success === "moved" && (
+          <div className="alert alert-success">Session moved{sp.from ? ` from ${sp.from}` : ""} to {sp.date}.</div>
+        )}
+        {sp.error === "date_taken" && (
+          <div className="error-msg" style={{ marginBottom: "0.75rem" }}>
+            That date already has a session recorded. Delete or edit it first, or pick another date.
+          </div>
+        )}
+
         <div className="summary-row">
           <div className="chip">
             <span className="chip-value">{attended.length}</span>
@@ -225,6 +250,19 @@ export default async function AttendancePage({
             <span className="chip-label">Absent</span>
           </div>
         </div>
+
+        {auth.role === "admin" && (
+          <div className="card">
+            <form action={handleChangeDate} className="form-row" style={{ alignItems: "flex-end", marginBottom: 0 }}>
+              <input type="hidden" name="from_date" value={sp.date} />
+              <div className="form-group">
+                <label htmlFor="to_date">Change session date to</label>
+                <input id="to_date" name="to_date" type="date" defaultValue={sp.date} required />
+              </div>
+              <button type="submit" className="btn btn-sm" style={{ marginBottom: "0.25rem" }}>Move session</button>
+            </form>
+          </div>
+        )}
 
         <div className="card">
           <h2>Attended ({attended.length})</h2>

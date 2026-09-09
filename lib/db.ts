@@ -983,6 +983,18 @@ export function deleteAttendanceSession(sessionDate: string): number {
   return info.changes;
 }
 
+/**
+ * Move a whole session to a different date (for a wrong date entered). Refuses if
+ * the target date already has attendance recorded, to avoid merging two sessions.
+ */
+export function changeSessionDate(fromDate: string, toDate: string): { moved: number } | { error: "date_taken" } {
+  if (!toDate || fromDate === toDate) return { moved: 0 };
+  const clash = db().prepare("SELECT COUNT(*) AS c FROM attendance_log WHERE session_date = ?").get(toDate) as { c: number };
+  if (clash.c > 0) return { error: "date_taken" };
+  const info = db().prepare("UPDATE attendance_log SET session_date = ? WHERE session_date = ?").run(toDate, fromDate);
+  return { moved: info.changes };
+}
+
 export function getSessionAttendance(sessionDate: string) {
   return db()
     .prepare(
