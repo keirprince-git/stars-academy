@@ -297,6 +297,9 @@ export default async function AttendancePage({
     }
     const n = sp.n === "4" ? 4 : 12;
     const grid = getAttendanceGrid(n);
+    // Last 4 is a recent-sessions check to send Coach Sunny: show only who
+    // actually attended (no empty rows). Last 12 keeps everyone for drop-off view.
+    const rows = n === 4 ? grid.players.filter((p) => p.total > 0) : grid.players;
 
     return (
       <>
@@ -317,7 +320,7 @@ export default async function AttendancePage({
               <a href="/attendance?view=grid&n=12" className={`btn btn-sm ${n === 12 ? "btn-primary" : ""}`}>Last 12</a>
             </div>
             <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · active players plus anyone who attended in the period, most regular first. ✓ = attended.
+              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · {n === 4 ? "only players who attended in this period" : "active players plus anyone who attended in the period"}, most regular first. ✓ = attended.
             </p>
             <div className="card" style={{ padding: 0, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", fontSize: "0.85rem" }}>
@@ -337,7 +340,7 @@ export default async function AttendancePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {grid.players.map((p, ri) => (
+                  {rows.map((p, ri) => (
                     <tr key={p.id} style={{ background: ri % 2 ? "var(--surface-2)" : "transparent" }}>
                       <td style={{ position: "sticky", left: 0, background: ri % 2 ? "var(--surface-2)" : "var(--surface)", whiteSpace: "nowrap" }}>
                         <a href={`/players/${p.id}`}>{p.name}</a>
