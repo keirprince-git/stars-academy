@@ -299,7 +299,15 @@ export default async function AttendancePage({
     const grid = getAttendanceGrid(n);
     // Last 4 is a recent-sessions check to send Coach Sunny: show only who
     // actually attended (no empty rows). Last 12 keeps everyone for drop-off view.
-    const rows = n === 4 ? grid.players.filter((p) => p.total > 0) : grid.players;
+    const baseRows = n === 4 ? grid.players.filter((p) => p.total > 0) : grid.players;
+    // Sort: default "total" (most regular first, as returned); "name" / "name_desc" alphabetical.
+    const sort = sp.sort === "name" || sp.sort === "name_desc" ? sp.sort : "total";
+    const rows = [...baseRows];
+    if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === "name_desc") rows.sort((a, b) => b.name.localeCompare(a.name));
+    const qs = `/attendance?view=grid&n=${n}`;
+    const nameNext = sort === "name" ? "name_desc" : "name";
+    const nameArrow = sort === "name" ? " ↑" : sort === "name_desc" ? " ↓" : "";
 
     return (
       <>
@@ -316,8 +324,8 @@ export default async function AttendancePage({
         ) : (
           <>
             <div className="gap-sm" style={{ marginBottom: "0.5rem" }}>
-              <a href="/attendance?view=grid&n=4" className={`btn btn-sm ${n === 4 ? "btn-primary" : ""}`}>Last 4</a>
-              <a href="/attendance?view=grid&n=12" className={`btn btn-sm ${n === 12 ? "btn-primary" : ""}`}>Last 12</a>
+              <a href={`/attendance?view=grid&n=4&sort=${sort}`} className={`btn btn-sm ${n === 4 ? "btn-primary" : ""}`}>Last 4</a>
+              <a href={`/attendance?view=grid&n=12&sort=${sort}`} className={`btn btn-sm ${n === 12 ? "btn-primary" : ""}`}>Last 12</a>
             </div>
             <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
               Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · {n === 4 ? "only players who attended in this period" : "active players plus anyone who attended in the period"}, most regular first. ✓ = attended.
@@ -326,7 +334,9 @@ export default async function AttendancePage({
               <table style={{ borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
                   <tr>
-                    <th style={{ position: "sticky", left: 0, background: "var(--surface)", textAlign: "left", minWidth: 160, zIndex: 1 }}>Player</th>
+                    <th style={{ position: "sticky", left: 0, background: "var(--surface)", textAlign: "left", minWidth: 160, zIndex: 1 }}>
+                      <a href={`${qs}&sort=${nameNext}`}>Player{nameArrow}</a>
+                    </th>
                     {grid.sessions.map((s) => {
                       const c = fmtCol(s);
                       return (
@@ -336,7 +346,9 @@ export default async function AttendancePage({
                         </th>
                       );
                     })}
-                    <th className="text-center" style={{ minWidth: 46 }}>Tot</th>
+                    <th className="text-center" style={{ minWidth: 46 }}>
+                      <a href={`${qs}&sort=total`}>Tot{sort === "total" ? " ↓" : ""}</a>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
