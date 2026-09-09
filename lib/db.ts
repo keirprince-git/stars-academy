@@ -937,6 +937,46 @@ export function getRecentSessions(limit = 20) {
     .all(limit) as { session_date: string; attended_count: number; total_count: number }[];
 }
 
+export interface AttendanceGrid {
+  sessions: string[]; // ISO dates, chronological (oldest -> newest)
+  players: { id: number; code: string; name: string; cells: boolean[]; total: number }[];
+  sessionTotals: number[]; // attended count per session, among the active players shown
+}
+
+/**
+ * At-a-glance attendance matrix: active players (rows) x the last `nSessions`
+ * recorded sessions (columns), a cell true where the player attended. Rows are
+ * ordered by attendance count (most regular first) so who's coming — and who has
+ * dropped off — is obvious. Session dates are returned oldest-first for L->R display.
+ */
+export function getAttendanceGrid(nSessions = 12): AttendanceGrid {
+  const d = db();
+  const dates = (d.prepare(
+    `SELECT DISTINCT session_date FROM attendance_log ORDER BY session_date DESC LIMIT ?`
+  ).all(nSessions) as { session_date: string }[]).map((r) => r.session_date).reverse();
+
+  const players = getActivePlayers();
+  if (dates.length === 0) {
+    return { sessions: [], players: players.map((p) => ({ ...p, cells: [], total: 0 })), sessionTotals: [] };
+  }
+
+  const placeholders = dates.map(() => "?").join(",");
+  const attended = d.prepare(
+    `SELECT player_id, session_date FROM attendance_log
+     WHERE attended = 1 AND session_date IN (${placeholders})`
+  ).all(...dates) as { player_id: number; session_date: string }[];
+  const seen = new Set(attended.map((a) => `${a.player_id}|${a.session_date}`));
+
+  const rows = players.map((p) => {
+    const cells = dates.map((dt) => seen.has(`${p.id}|${dt}`));
+    return { id: p.id, code: p.code, name: p.name, cells, total: cells.filter(Boolean).length };
+  });
+  rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  const sessionTotals = dates.map((_, i) => rows.reduce((s, r) => s + (r.cells[i] ? 1 : 0), 0));
+  return { sessions: dates, players: rows, sessionTotals };
+}
+
 export function getSessionAttendance(sessionDate: string) {
   return db()
     .prepare(

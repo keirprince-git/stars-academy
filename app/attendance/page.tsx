@@ -1,16 +1,23 @@
 import { requireAuth } from "@/lib/auth";
-import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance } from "@/lib/db";
+import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getAttendanceGrid } from "@/lib/db";
 import { redirect } from "next/navigation";
+
+function fmtCol(iso: string) {
+  const d = new Date(iso + "T00:00:00");
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
+  const mo = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()];
+  return { wd, dm: `${d.getDate()} ${mo}` };
+}
 
 export default async function AttendancePage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireAuth(); // both admin and recorder can record attendance
+  const auth = await requireAuth(); // both admin and recorder can record attendance
   const sp = await searchParams;
 
-  const view = sp.view ?? "record"; // "record" | "history" | "session"
+  const view = sp.view ?? "record"; // "record" | "history" | "session" | "grid"
   const success = sp.success;
 
   // Server action - declared at top level to avoid strict-mode block restriction
@@ -57,7 +64,10 @@ export default async function AttendancePage({
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
           <h2>Record Attendance</h2>
-          <a href="/attendance?view=history" className="btn btn-sm">View History</a>
+          <div className="gap-sm">
+            {auth.role === "admin" && <a href="/attendance?view=grid" className="btn btn-sm">Overview</a>}
+            <a href="/attendance?view=history" className="btn btn-sm">View History</a>
+          </div>
         </div>
 
         {success && (
@@ -204,6 +214,79 @@ export default async function AttendancePage({
     );
   }
 
+  // ── Grid / overview view (admin only) ───────────────
+  if (view === "grid") {
+    if (auth.role !== "admin") {
+      return <p className="error-msg">Only admins can view the attendance overview.</p>;
+    }
+    const grid = getAttendanceGrid(12);
+
+    return (
+      <>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+          <h2>Attendance Overview</h2>
+          <div className="gap-sm">
+            <a href="/attendance?view=history" className="btn btn-sm">History</a>
+            <a href="/attendance?view=record" className="btn btn-sm btn-primary">Record New</a>
+          </div>
+        </div>
+
+        {grid.sessions.length === 0 ? (
+          <div className="card"><p className="text-dim">No sessions recorded yet.</p></div>
+        ) : (
+          <>
+            <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · active players, most regular first. ✓ = attended.
+            </p>
+            <div className="card" style={{ padding: 0, overflow: "auto" }}>
+              <table style={{ borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                <thead>
+                  <tr>
+                    <th style={{ position: "sticky", left: 0, background: "var(--surface)", textAlign: "left", minWidth: 160, zIndex: 1 }}>Player</th>
+                    {grid.sessions.map((s) => {
+                      const c = fmtCol(s);
+                      return (
+                        <th key={s} className="text-center" style={{ minWidth: 46, lineHeight: 1.15, padding: "0.4rem 0.25rem" }}>
+                          <div style={{ fontWeight: 600 }}>{c.wd}</div>
+                          <div className="text-dim" style={{ fontWeight: 400, fontSize: "0.72rem" }}>{c.dm}</div>
+                        </th>
+                      );
+                    })}
+                    <th className="text-center" style={{ minWidth: 46 }}>Tot</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {grid.players.map((p, ri) => (
+                    <tr key={p.id} style={{ background: ri % 2 ? "var(--surface-2)" : "transparent" }}>
+                      <td style={{ position: "sticky", left: 0, background: ri % 2 ? "var(--surface-2)" : "var(--surface)", whiteSpace: "nowrap" }}>
+                        <a href={`/players/${p.id}`}>{p.name}</a>
+                      </td>
+                      {p.cells.map((on, ci) => (
+                        <td key={ci} className="text-center" style={{
+                          background: on ? "var(--primary-soft)" : "transparent",
+                          color: on ? "var(--primary)" : "#cfd4d9",
+                          fontWeight: on ? 700 : 400,
+                        }}>{on ? "✓" : "·"}</td>
+                      ))}
+                      <td className="text-center" style={{ fontWeight: 600 }}>{p.total}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
+                    <td style={{ position: "sticky", left: 0, background: "var(--surface)" }}>Attending</td>
+                    {grid.sessionTotals.map((t, i) => (
+                      <td key={i} className="text-center">{t}</td>
+                    ))}
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </>
+    );
+  }
+
   // ── History view ────────────────────────────────────
   const sessions = getRecentSessions(50);
 
@@ -211,7 +294,10 @@ export default async function AttendancePage({
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h2>Attendance History</h2>
-        <a href="/attendance?view=record" className="btn btn-sm btn-primary">Record New</a>
+        <div className="gap-sm">
+          {auth.role === "admin" && <a href="/attendance?view=grid" className="btn btn-sm">Overview</a>}
+          <a href="/attendance?view=record" className="btn btn-sm btn-primary">Record New</a>
+        </div>
       </div>
 
       <div className="card" style={{ padding: 0, overflow: "auto" }}>
