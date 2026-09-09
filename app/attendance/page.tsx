@@ -299,13 +299,19 @@ export default async function AttendancePage({
     const grid = getAttendanceGrid(n);
     // Last 4 is a recent-sessions check to send Coach Sunny: show only who
     // actually attended (no empty rows). Last 12 keeps everyone for drop-off view.
-    const baseRows = n === 4 ? grid.players.filter((p) => p.total > 0) : grid.players;
+    const attendedOnly = n === 4 ? grid.players.filter((p) => p.total > 0) : grid.players;
+    // Name filter (e.g. "David" -> all Davids)
+    const q = (sp.q ?? "").trim();
+    const baseRows = q ? attendedOnly.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())) : attendedOnly;
     // Sort: default "total" (most regular first, as returned); "name" / "name_desc" alphabetical.
     const sort = sp.sort === "name" || sp.sort === "name_desc" ? sp.sort : "total";
     const rows = [...baseRows];
     if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
     else if (sort === "name_desc") rows.sort((a, b) => b.name.localeCompare(a.name));
-    const qs = `/attendance?view=grid&n=${n}`;
+    // Column totals reflect what's shown (so a filtered view totals just those players).
+    const colTotals = grid.sessions.map((_, i) => rows.reduce((s, r) => s + (r.cells[i] ? 1 : 0), 0));
+    const qPart = q ? `&q=${encodeURIComponent(q)}` : "";
+    const qs = `/attendance?view=grid&n=${n}${qPart}`;
     const nameNext = sort === "name" ? "name_desc" : "name";
     const nameArrow = sort === "name" ? " ↑" : sort === "name_desc" ? " ↓" : "";
 
@@ -323,13 +329,26 @@ export default async function AttendancePage({
           <div className="card"><p className="text-dim">No sessions recorded yet.</p></div>
         ) : (
           <>
-            <div className="gap-sm" style={{ marginBottom: "0.5rem" }}>
-              <a href={`/attendance?view=grid&n=4&sort=${sort}`} className={`btn btn-sm ${n === 4 ? "btn-primary" : ""}`}>Last 4</a>
-              <a href={`/attendance?view=grid&n=12&sort=${sort}`} className={`btn btn-sm ${n === 12 ? "btn-primary" : ""}`}>Last 12</a>
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+              <div className="gap-sm">
+                <a href={`/attendance?view=grid&n=4&sort=${sort}${qPart}`} className={`btn btn-sm ${n === 4 ? "btn-primary" : ""}`}>Last 4</a>
+                <a href={`/attendance?view=grid&n=12&sort=${sort}${qPart}`} className={`btn btn-sm ${n === 12 ? "btn-primary" : ""}`}>Last 12</a>
+              </div>
+              <form method="GET" action="/attendance" className="gap-sm" style={{ display: "flex", alignItems: "center" }}>
+                <input type="hidden" name="view" value="grid" />
+                <input type="hidden" name="n" value={n} />
+                <input type="hidden" name="sort" value={sort} />
+                <input name="q" type="search" defaultValue={q} placeholder="Filter by name…" style={{ maxWidth: 180 }} />
+                <button type="submit" className="btn btn-sm">Filter</button>
+                {q && <a href={`/attendance?view=grid&n=${n}&sort=${sort}`} className="btn btn-sm">Clear</a>}
+              </form>
             </div>
             <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · {n === 4 ? "only players who attended in this period" : "active players plus anyone who attended in the period"}, most regular first. ✓ = attended.
+              Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · {n === 4 ? "only players who attended in this period" : "active players plus anyone who attended in the period"}, most regular first. ✓ = attended.{q ? ` Filtered by "${q}".` : ""}
             </p>
+            {rows.length === 0 && (
+              <div className="card"><p className="text-dim">No players match &ldquo;{q}&rdquo;.</p></div>
+            )}
             <div className="card" style={{ padding: 0, overflow: "auto" }}>
               <table style={{ borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
@@ -372,7 +391,7 @@ export default async function AttendancePage({
                   ))}
                   <tr style={{ borderTop: "2px solid var(--border)", fontWeight: 600 }}>
                     <td style={{ position: "sticky", left: 0, background: "var(--surface)" }}>Attending</td>
-                    {grid.sessionTotals.map((t, i) => (
+                    {colTotals.map((t, i) => (
                       <td key={i} className="text-center">{t}</td>
                     ))}
                     <td></td>
