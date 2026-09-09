@@ -295,7 +295,8 @@ export default async function AttendancePage({
     if (auth.role !== "admin") {
       return <p className="error-msg">Only admins can view the attendance overview.</p>;
     }
-    const grid = getAttendanceGrid(12);
+    const n = sp.n === "4" ? 4 : 12;
+    const grid = getAttendanceGrid(n);
 
     return (
       <>
@@ -311,6 +312,10 @@ export default async function AttendancePage({
           <div className="card"><p className="text-dim">No sessions recorded yet.</p></div>
         ) : (
           <>
+            <div className="gap-sm" style={{ marginBottom: "0.5rem" }}>
+              <a href="/attendance?view=grid&n=4" className={`btn btn-sm ${n === 4 ? "btn-primary" : ""}`}>Last 4</a>
+              <a href="/attendance?view=grid&n=12" className={`btn btn-sm ${n === 12 ? "btn-primary" : ""}`}>Last 12</a>
+            </div>
             <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
               Last {grid.sessions.length} session{grid.sessions.length !== 1 ? "s" : ""} · active players plus anyone who attended in the period, most regular first. ✓ = attended.
             </p>
