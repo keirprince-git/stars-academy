@@ -72,6 +72,7 @@ export default async function PlayersPage({
             <tr>
               <th dangerouslySetInnerHTML={{ __html: sortLink("code", "ID") }} />
               <th dangerouslySetInnerHTML={{ __html: sortLink("name", "Name") }} />
+              <th dangerouslySetInnerHTML={{ __html: sortLink("source", "Age Group") }} />
               <th dangerouslySetInnerHTML={{ __html: sortLink("play_status", "Status") }} />
               <th>Scholarship</th>
               <th>Notes</th>
@@ -79,12 +80,13 @@ export default async function PlayersPage({
           </thead>
           <tbody>
             {players.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-dim" style={{ padding: "2rem" }}>No players found.</td></tr>
+              <tr><td colSpan={6} className="text-center text-dim" style={{ padding: "2rem" }}>No players found.</td></tr>
             )}
             {players.map((p) => (
               <tr key={p.id}>
                 <td><a href={`/players/${p.id}`}>{p.code}</a></td>
                 <td><a href={`/players/${p.id}`}>{p.name}</a></td>
+                <td>{p.source ?? "—"}</td>
                 <td>
                   <span className={
                     p.play_status === "Active" ? "badge-active" :
