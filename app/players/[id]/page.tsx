@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
-import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions, ensureKitOrdersForAllPlayers, getKitOrderForPlayer } from "@/lib/db";
+import { getPlayer, getPlayerAttendance, getPlayerAttendanceStats, getPlayerPurchases, getPlayerBankAllocations, getPlayers, updatePlayer, addFreeSessionCredit, transferSessions, ensureKitOrdersForAllPlayers, getKitOrderForPlayer, updatePurchaseAmount } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { buildChaseMessage, buildTariffMessage, buildKitOrderMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 import { KIT_YEAR, KIT_PRICE, KIT_AVAILABILITY_DATE, APP_BASE_URL } from "@/lib/kit";
@@ -79,6 +79,16 @@ export default async function PlayerDetailPage({
 
     transferSessions(fromPlayerId, toPlayerId, sessions, notes);
     redirect(`/players/${toPlayerId}?success=transfer`);
+  }
+
+  async function handleSetAmount(formData: FormData) {
+    "use server";
+    await requireAuth("admin");
+    const playerId = Number(formData.get("player_id"));
+    const purchaseId = Number(formData.get("purchase_id"));
+    const amount = Number(formData.get("amount"));
+    if (purchaseId && amount >= 0) updatePurchaseAmount(purchaseId, amount);
+    redirect(`/players/${playerId}?success=amount`);
   }
 
   async function handleSave(formData: FormData) {
@@ -373,7 +383,17 @@ export default async function PlayerDetailPage({
                   <tr key={i}>
                     <td>{p.purchase_date}</td>
                     <td>{p.type}</td>
-                    <td className="text-right">{p.amount_paid ? `₦${p.amount_paid.toLocaleString()}` : "—"}</td>
+                    <td className="text-right">
+                      {isAdmin && p.type === "Purchase" ? (
+                        <form action={handleSetAmount} style={{ display: "inline-flex", gap: "0.3rem", alignItems: "center", justifyContent: "flex-end" }}>
+                          <input type="hidden" name="player_id" value={player.id} />
+                          <input type="hidden" name="purchase_id" value={p.id} />
+                          <span className="text-dim">₦</span>
+                          <input name="amount" type="number" min="0" step="500" defaultValue={p.amount_paid || ""} placeholder="0" style={{ width: "90px", textAlign: "right" }} />
+                          <button type="submit" className="btn btn-sm">Save</button>
+                        </form>
+                      ) : (p.amount_paid ? `₦${p.amount_paid.toLocaleString()}` : "—")}
+                    </td>
                     <td className="text-right">{p.sessions_purchased}</td>
                     <td>{p.package ?? ""}</td>
                     <td>{p.bank_ref ?? ""}</td>

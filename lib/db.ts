@@ -1021,11 +1021,12 @@ export function getSessionAttendance(sessionDate: string) {
 export function getPlayerPurchases(playerId: number) {
   return db()
     .prepare(
-      `SELECT purchase_date, type, amount_paid, sessions_purchased, package, bank_ref, notes
+      `SELECT id, purchase_date, type, amount_paid, sessions_purchased, package, bank_ref, notes
        FROM sessions_purchased
        WHERE player_id = ? ORDER BY purchase_date DESC`
     )
     .all(playerId) as {
+    id: number;
     purchase_date: string;
     type: string;
     amount_paid: number;
@@ -1034,6 +1035,14 @@ export function getPlayerPurchases(playerId: number) {
     bank_ref: string | null;
     notes: string | null;
   }[];
+}
+
+/** Set the amount paid on a Purchase row (for correcting migration rows entered without an amount). */
+export function updatePurchaseAmount(id: number, amount: number): number {
+  const info = db()
+    .prepare("UPDATE sessions_purchased SET amount_paid = ? WHERE id = ? AND type = 'Purchase'")
+    .run(amount, id);
+  return info.changes;
 }
 
 export function addFreeSessionCredit(
