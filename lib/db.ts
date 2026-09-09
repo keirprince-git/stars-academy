@@ -977,6 +977,12 @@ export function getAttendanceGrid(nSessions = 12): AttendanceGrid {
   return { sessions: dates, players: rows, sessionTotals };
 }
 
+/** Delete all attendance rows for one session date (for mistaken/empty sessions). Returns rows removed. */
+export function deleteAttendanceSession(sessionDate: string): number {
+  const info = db().prepare("DELETE FROM attendance_log WHERE session_date = ?").run(sessionDate);
+  return info.changes;
+}
+
 export function getSessionAttendance(sessionDate: string) {
   return db()
     .prepare(

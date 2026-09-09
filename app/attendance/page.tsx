@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getAttendanceGrid } from "@/lib/db";
+import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getAttendanceGrid, deleteAttendanceSession } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 function fmtCol(iso: string) {
@@ -39,6 +39,15 @@ export default async function AttendancePage({
 
     recordAttendance(sessionDate, sessionDay, attendedIds);
     redirect(`/attendance?success=1&recorded=${attendedIds.length}&date=${sessionDate}`);
+  };
+
+  // Delete a whole session (admin only) - for mistaken/empty entries
+  const handleDeleteSession = async (formData: FormData) => {
+    "use server";
+    await requireAuth("admin");
+    const sessionDate = formData.get("session_date") as string;
+    if (sessionDate) deleteAttendanceSession(sessionDate);
+    redirect(`/attendance?view=history&success=deleted&date=${sessionDate}`);
   };
 
   // ── Record view ─────────────────────────────────────
@@ -161,6 +170,34 @@ export default async function AttendancePage({
     );
   }
 
+  // ── Delete-session confirmation (admin only) ────────
+  if (view === "deleteconfirm" && sp.date) {
+    if (auth.role !== "admin") {
+      return <p className="error-msg">Only admins can delete sessions.</p>;
+    }
+    const rows = getSessionAttendance(sp.date);
+    const attended = rows.filter(r => r.attended === 1).length;
+    return (
+      <>
+        <h2 style={{ marginBottom: "1rem" }}>Delete session?</h2>
+        <div className="card">
+          <p style={{ marginBottom: "0.75rem" }}>
+            This permanently removes the attendance record for <strong>{sp.date}</strong>
+            {" "}({attended} marked attended, {rows.length} player row{rows.length !== 1 ? "s" : ""}).
+            This cannot be undone — you would have to re-record the session.
+          </p>
+          <div className="gap-sm">
+            <form action={handleDeleteSession} style={{ display: "inline" }}>
+              <input type="hidden" name="session_date" value={sp.date} />
+              <button type="submit" className="btn btn-sm btn-danger">Yes, delete this session</button>
+            </form>
+            <a href={`/attendance?view=session&date=${sp.date}`} className="btn btn-sm">Cancel</a>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   // ── Session detail view ─────────────────────────────
   if (view === "session" && sp.date) {
     const rows = getSessionAttendance(sp.date);
@@ -173,6 +210,7 @@ export default async function AttendancePage({
           <h2>Session: {sp.date}</h2>
           <div className="gap-sm">
             <a href={`/attendance?view=record&date=${sp.date}`} className="btn btn-sm btn-primary">Edit</a>
+            {auth.role === "admin" && <a href={`/attendance?view=deleteconfirm&date=${sp.date}`} className="btn btn-sm btn-danger">Delete</a>}
             <a href="/attendance?view=history" className="btn btn-sm">Back to History</a>
           </div>
         </div>
@@ -299,6 +337,10 @@ export default async function AttendancePage({
           <a href="/attendance?view=record" className="btn btn-sm btn-primary">Record New</a>
         </div>
       </div>
+
+      {sp.success === "deleted" && (
+        <div className="alert alert-success">Session {sp.date} deleted.</div>
+      )}
 
       <div className="card" style={{ padding: 0, overflow: "auto" }}>
         <table>
