@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
-import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getSessionMeta, getAttendanceGrid, deleteAttendanceSession, changeSessionDate } from "@/lib/db";
+import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getSessionMeta, getAttendanceGrid, deleteAttendanceSession, changeSessionDate, getPlayersNeedingChase } from "@/lib/db";
+import { buildChaseMessage, buildWhatsAppLink } from "@/lib/whatsapp";
 import { redirect } from "next/navigation";
 
 function fmtCol(iso: string) {
@@ -134,6 +135,10 @@ export default async function AttendancePage({
       }
     }
 
+    // After a save: which of this session's attendees are now at zero credit or
+    // overdue — surfaced here so it can be raised with the parent at the pitch.
+    const dueNow = success && sp.date ? getPlayersNeedingChase({ attendedOn: sp.date }) : [];
+
     return (
       <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -147,6 +152,41 @@ export default async function AttendancePage({
         {success && (
           <div className="alert alert-success">
             Attendance recorded: {sp.recorded} player{sp.recorded !== "1" ? "s" : ""} attended on {sp.date}.
+          </div>
+        )}
+
+        {dueNow.length > 0 && (
+          <div className="card" style={{ marginBottom: "1rem", borderLeft: "4px solid var(--warning)" }}>
+            <h3 style={{ margin: "0 0 0.35rem", fontSize: "1rem" }}>
+              Now at zero credit or overdue ({dueNow.length})
+            </h3>
+            <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.6rem" }}>
+              These players attended today and have no paid sessions left. Worth a word with the parent.
+            </p>
+            <table>
+              <thead>
+                <tr><th>Player</th><th className="text-right">Balance</th><th>Parent</th><th></th></tr>
+              </thead>
+              <tbody>
+                {dueNow.map((p) => (
+                  <tr key={p.player_id}>
+                    <td><a href={`/players/${p.player_id}`}>{p.name}</a></td>
+                    <td className="text-right" style={{ color: p.balance < 0 ? "var(--danger)" : "var(--warning)", fontWeight: 600 }}>
+                      {p.balance < 0 ? `${Math.abs(p.balance)} overdue` : "0 left"}
+                    </td>
+                    <td className="text-dim">{p.parent_name ?? ""}</td>
+                    <td>
+                      {p.parent_phone ? (
+                        <a
+                          href={buildWhatsAppLink(p.parent_phone, buildChaseMessage({ playerName: p.name, balance: p.balance, parentName: p.parent_name, ageGroup: p.source }))}
+                          target="_blank" rel="noopener" className="btn btn-sm btn-primary"
+                        >Chase</a>
+                      ) : <span className="text-dim" style={{ fontSize: "0.8rem" }}>no number</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 

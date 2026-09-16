@@ -773,6 +773,46 @@ export function getDashboard(opts?: {
   return rows;
 }
 
+export interface ChaseRow {
+  player_id: number;
+  code: string;
+  name: string;
+  source: string | null;
+  sessions_paid: number;
+  sessions_attended: number;
+  balance: number;          // <= 0: 0 = fully used, negative = overdue
+  parent_name: string | null;
+  parent_phone: string | null;
+}
+
+/**
+ * Active, non-scholarship players at zero credit or overdue (balance <= 0),
+ * using the same paid-minus-attended balance as the dashboard. Optionally
+ * restricted to those who attended a given session date (for the post-save
+ * "now at zero" alert). Most overdue first.
+ */
+export function getPlayersNeedingChase(opts?: { attendedOn?: string }): ChaseRow[] {
+  const dateClause = opts?.attendedOn
+    ? "AND EXISTS (SELECT 1 FROM attendance_log a WHERE a.player_id = p.id AND a.session_date = @date AND a.attended = 1)"
+    : "";
+  const sql = `
+    SELECT p.id AS player_id, p.code, p.name, p.source, p.parent_name, p.parent_phone,
+           COALESCE(sp.total_sessions, 0)  AS sessions_paid,
+           COALESCE(att.total_attended, 0) AS sessions_attended,
+           COALESCE(sp.total_sessions, 0) - COALESCE(att.total_attended, 0) AS balance
+    FROM players p
+    LEFT JOIN (SELECT player_id, SUM(sessions_purchased) AS total_sessions
+               FROM sessions_purchased GROUP BY player_id) sp ON sp.player_id = p.id
+    LEFT JOIN (SELECT player_id, COUNT(*) AS total_attended
+               FROM attendance_log WHERE attended = 1 GROUP BY player_id) att ON att.player_id = p.id
+    WHERE p.play_status = 'Active' AND p.scholarship = 0
+      AND COALESCE(sp.total_sessions, 0) - COALESCE(att.total_attended, 0) <= 0
+      ${dateClause}
+    ORDER BY balance ASC, p.name ASC`;
+  const stmt = db().prepare(sql);
+  return (opts?.attendedOn ? stmt.all({ date: opts.attendedOn }) : stmt.all()) as ChaseRow[];
+}
+
 /* ── Summary stats ──────────────────────────────────── */
 
 export function getDashboardSummary() {
