@@ -136,6 +136,14 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: add recorded_by to attendance_log (who saved the session) ── */
+  try {
+    const cols = d.prepare("PRAGMA table_info(attendance_log)").all() as Array<{ name: string }>;
+    if (cols.length > 0 && !cols.some(c => c.name === "recorded_by")) {
+      d.exec("ALTER TABLE attendance_log ADD COLUMN recorded_by INTEGER REFERENCES users(id)");
+    }
+  } catch { /* table doesn't exist yet — fine */ }
+
   d.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,6 +182,7 @@ function ensureSchema(d: Database.Database) {
       player_id    INTEGER NOT NULL REFERENCES players(id),
       session_date TEXT    NOT NULL,
       attended     INTEGER NOT NULL DEFAULT 1,
+      recorded_by  INTEGER REFERENCES users(id),
       created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -904,12 +913,17 @@ export function getActivePlayers() {
     .all() as { id: number; code: string; name: string }[];
 }
 
-export function recordAttendance(sessionDate: string, sessionDay: string, attendedPlayerIds: number[]) {
+/**
+ * Save a session's attendance. Deletes and re-inserts ALL rows for the date, so
+ * `recorded_by` and `created_at` reflect the LAST save of that session, not the
+ * first — i.e. whoever most recently saved/edited it. That is intentional.
+ */
+export function recordAttendance(sessionDate: string, sessionDay: string, attendedPlayerIds: number[], recordedBy: number) {
   const activePlayers = getActivePlayers();
   const attendedSet = new Set(attendedPlayerIds);
 
   const insert = db().prepare(
-    "INSERT INTO attendance_log (player_id, session_date, attended) VALUES (?, ?, ?)"
+    "INSERT INTO attendance_log (player_id, session_date, attended, recorded_by) VALUES (?, ?, ?, ?)"
   );
 
   const tx = db().transaction(() => {
@@ -917,7 +931,7 @@ export function recordAttendance(sessionDate: string, sessionDay: string, attend
     db().prepare("DELETE FROM attendance_log WHERE session_date = ?").run(sessionDate);
 
     for (const player of activePlayers) {
-      insert.run(player.id, sessionDate, attendedSet.has(player.id) ? 1 : 0);
+      insert.run(player.id, sessionDate, attendedSet.has(player.id) ? 1 : 0, recordedBy);
     }
   });
 
@@ -927,14 +941,37 @@ export function recordAttendance(sessionDate: string, sessionDay: string, attend
 export function getRecentSessions(limit = 20) {
   return db()
     .prepare(
-      `SELECT session_date, COUNT(CASE WHEN attended=1 THEN 1 END) AS attended_count,
-              COUNT(*) AS total_count
-       FROM attendance_log
-       GROUP BY session_date
-       ORDER BY session_date DESC
+      `SELECT al.session_date,
+              COUNT(CASE WHEN al.attended=1 THEN 1 END) AS attended_count,
+              COUNT(*) AS total_count,
+              MAX(u.username) AS recorded_by_name,
+              MAX(al.created_at) AS recorded_at
+       FROM attendance_log al
+       LEFT JOIN users u ON u.id = al.recorded_by
+       GROUP BY al.session_date
+       ORDER BY al.session_date DESC
        LIMIT ?`
     )
-    .all(limit) as { session_date: string; attended_count: number; total_count: number }[];
+    .all(limit) as {
+      session_date: string;
+      attended_count: number;
+      total_count: number;
+      recorded_by_name: string | null;
+      recorded_at: string | null;
+    }[];
+}
+
+/** Who last saved a session and when (all rows for a date share one recorded_by). */
+export function getSessionMeta(sessionDate: string): { recorded_by_name: string | null; recorded_at: string | null } {
+  const row = db()
+    .prepare(
+      `SELECT MAX(u.username) AS recorded_by_name, MAX(al.created_at) AS recorded_at
+       FROM attendance_log al
+       LEFT JOIN users u ON u.id = al.recorded_by
+       WHERE al.session_date = ?`
+    )
+    .get(sessionDate) as { recorded_by_name: string | null; recorded_at: string | null } | undefined;
+  return { recorded_by_name: row?.recorded_by_name ?? null, recorded_at: row?.recorded_at ?? null };
 }
 
 export interface AttendanceGrid {

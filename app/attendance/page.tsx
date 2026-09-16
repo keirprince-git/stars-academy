@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getAttendanceGrid, deleteAttendanceSession, changeSessionDate } from "@/lib/db";
+import { getActivePlayers, recordAttendance, getRecentSessions, getSessionAttendance, getSessionMeta, getAttendanceGrid, deleteAttendanceSession, changeSessionDate } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 function fmtCol(iso: string) {
@@ -23,6 +23,7 @@ export default async function AttendancePage({
   // Server action - declared at top level to avoid strict-mode block restriction
   const handleRecord = async (formData: FormData) => {
     "use server";
+    const { userId } = await requireAuth(); // who is saving this session
     const sessionDate = formData.get("session_date") as string;
     const sessionDay = formData.get("session_day") as string;
 
@@ -37,7 +38,7 @@ export default async function AttendancePage({
       }
     }
 
-    recordAttendance(sessionDate, sessionDay, attendedIds);
+    recordAttendance(sessionDate, sessionDay, attendedIds, userId);
     redirect(`/attendance?success=1&recorded=${attendedIds.length}&date=${sessionDate}`);
   };
 
@@ -219,6 +220,7 @@ export default async function AttendancePage({
     const rows = getSessionAttendance(sp.date);
     const attended = rows.filter(r => r.attended === 1);
     const absent = rows.filter(r => r.attended === 0);
+    const meta = getSessionMeta(sp.date);
 
     return (
       <>
@@ -230,6 +232,12 @@ export default async function AttendancePage({
             <a href="/attendance?view=history" className="btn btn-sm">Back to History</a>
           </div>
         </div>
+
+        <p className="text-dim" style={{ fontSize: "0.85rem", marginTop: "-0.5rem", marginBottom: "1rem" }}>
+          {meta.recorded_by_name
+            ? `Recorded by ${meta.recorded_by_name} on ${meta.recorded_at}`
+            : "Recorded by: unknown (before audit trail)"}
+        </p>
 
         {sp.success === "moved" && (
           <div className="alert alert-success">Session moved{sp.from ? ` from ${sp.from}` : ""} to {sp.date}.</div>
@@ -430,12 +438,13 @@ export default async function AttendancePage({
               <th className="text-right">Attended</th>
               <th className="text-right">Total</th>
               <th className="text-right">Rate</th>
+              <th>Recorded by</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {sessions.length === 0 && (
-              <tr><td colSpan={5} className="text-center text-dim" style={{ padding: "2rem" }}>No sessions recorded yet.</td></tr>
+              <tr><td colSpan={6} className="text-center text-dim" style={{ padding: "2rem" }}>No sessions recorded yet.</td></tr>
             )}
             {sessions.map((s) => (
               <tr key={s.session_date}>
@@ -445,6 +454,7 @@ export default async function AttendancePage({
                 <td className="text-right">
                   {s.total_count > 0 ? `${Math.round((s.attended_count / s.total_count) * 100)}%` : "—"}
                 </td>
+                <td className="text-dim">{s.recorded_by_name ?? "—"}</td>
                 <td>
                   <a href={`/attendance?view=session&date=${s.session_date}`} className="btn btn-sm">View</a>
                 </td>
