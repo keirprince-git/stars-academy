@@ -9,6 +9,38 @@ function fmtCol(iso: string) {
   return { wd, dm: `${d.getDate()} ${mo}` };
 }
 
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Weekday name of a YYYY-MM-DD date (date-only, no timezone drift). */
+function weekdayOf(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
+
+/** "d MMM yyyy", e.g. 9 Sep 2026. */
+function fmtLong(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+/** Today's date in Asia/Amman as YYYY-MM-DD (the server runs in UTC). */
+function todayAmman(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Amman", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+/** Most recent Tuesday or Friday on or before the given date. */
+function lastTrainingDayOnOrBefore(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  for (let i = 0; i < 7; i++) {
+    const wd = dt.getUTCDay();
+    if (wd === 2 || wd === 5) break;
+    dt.setUTCDate(dt.getUTCDate() - 1);
+  }
+  return dt.toISOString().slice(0, 10);
+}
+
 export default async function AttendancePage({
   searchParams,
 }: {
@@ -29,6 +61,12 @@ export default async function AttendancePage({
 
     if (!sessionDate) {
       redirect("/attendance?error=date_required");
+    }
+
+    // Guard: a Tuesday/Friday session must actually fall on that weekday. "Other"
+    // (one-off) saves without checking. Never silently change the date.
+    if ((sessionDay === "Tuesday" || sessionDay === "Friday") && weekdayOf(sessionDate) !== sessionDay) {
+      redirect(`/attendance?view=record&error=day_mismatch&date=${sessionDate}&day=${sessionDay}`);
     }
 
     const attendedIds: number[] = [];
@@ -70,14 +108,24 @@ export default async function AttendancePage({
   // ── Record view ─────────────────────────────────────
   if (view === "record") {
     const players = getActivePlayers();
-    const today = new Date().toISOString().slice(0, 10);
 
-    // Determine day of week for default
-    const dayOfWeek = new Date().getDay(); // 0=Sun, 2=Tue, 5=Fri
-    const defaultDay = dayOfWeek === 5 ? "Friday" : "Tuesday";
+    // If editing an existing session (or returning after a day-mismatch), sp.date is set.
+    const editDate = sp.date;
+    const dayMismatch = sp.error === "day_mismatch";
+
+    // New session: default to the most recent Tuesday/Friday on or before today
+    // (Asia/Amman), so recording the day after training needs no date edit.
+    // Editing: keep the session's own date.
+    const defaultDate = editDate ?? lastTrainingDayOnOrBefore(todayAmman());
+
+    // Session Day default: the weekday of the default date if it's a training day,
+    // otherwise "Other". After a mismatch, preserve what the user chose.
+    const wd = weekdayOf(defaultDate);
+    const defaultDay = dayMismatch && sp.day
+      ? sp.day
+      : (wd === "Tuesday" || wd === "Friday") ? wd : "Other";
 
     // If editing an existing session, pre-load attendance
-    const editDate = sp.date;
     let preChecked: Set<number> | null = null;
     if (editDate) {
       const existing = getSessionAttendance(editDate);
@@ -105,6 +153,11 @@ export default async function AttendancePage({
         {sp.error === "date_required" && (
           <div className="error-msg" style={{ marginBottom: "0.75rem" }}>Please enter a session date.</div>
         )}
+        {dayMismatch && sp.date && sp.day && (
+          <div className="error-msg" style={{ marginBottom: "0.75rem" }}>
+            {fmtLong(sp.date)} is a {weekdayOf(sp.date)}, but Session Day is {sp.day}. Fix the date, or choose Other for a one-off session.
+          </div>
+        )}
 
         <div className="card">
           <form action={handleRecord}>
@@ -116,7 +169,7 @@ export default async function AttendancePage({
                   id="session_date"
                   name="session_date"
                   type="date"
-                  defaultValue={editDate ?? today}
+                  defaultValue={defaultDate}
                   required
                 />
               </div>
@@ -125,6 +178,7 @@ export default async function AttendancePage({
                 <select id="session_day" name="session_day" defaultValue={defaultDay}>
                   <option value="Tuesday">Tuesday</option>
                   <option value="Friday">Friday</option>
+                  <option value="Other">Other (one-off session)</option>
                 </select>
               </div>
             </div>
