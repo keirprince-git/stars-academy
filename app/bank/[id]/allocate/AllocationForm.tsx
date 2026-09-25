@@ -23,6 +23,8 @@ export default function AllocationForm({
   remaining,
   guessedIds,
   bestGuess,
+  suggestReason = null,
+  defaultKind = "session",
   kitPrice,
   kitOrdersByPlayer,
   handleAllocate,
@@ -32,14 +34,18 @@ export default function AllocationForm({
   remaining: number;
   guessedIds: number[];
   bestGuess: number | null;
+  suggestReason?: string | null;
+  defaultKind?: PaymentKind;
   kitPrice: number;
   kitOrdersByPlayer: Record<number, KitOrderLite>;
   handleAllocate: (formData: FormData) => Promise<void>;
 }) {
-  const [kind, setKind] = useState<PaymentKind>("session");
+  const [kind, setKind] = useState<PaymentKind>(defaultKind);
   const [playerId, setPlayerId] = useState<string>(bestGuess ? String(bestGuess) : "");
   const [pkg, setPkg] = useState<string>("");
-  const [amount, setAmount] = useState<string>(String(remaining));
+  const [amount, setAmount] = useState<string>(
+    String(defaultKind === "kit" ? Math.min(kitPrice, remaining) : remaining)
+  );
   const [sessions, setSessions] = useState<string>("");
 
   const selectedPlayer = players.find((p) => p.id === Number(playerId));
@@ -136,6 +142,11 @@ export default function AllocationForm({
             Kit
           </label>
         </div>
+        {defaultKind === "kit" && kind === "kit" && (
+          <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginTop: "0.25rem" }}>
+            Set to Kit because the amount matches the kit price (₦{kitPrice.toLocaleString()}).
+          </div>
+        )}
       </div>
 
       {/* ── Player ──────────────────────────────────── */}
@@ -164,7 +175,7 @@ export default function AllocationForm({
         )}
         {guessedIds.length > 0 && (
           <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", marginTop: "0.25rem" }}>
-            ★ Suggested based on transaction description
+            {suggestReason ?? "★ Suggested based on transaction description"}
           </div>
         )}
       </div>

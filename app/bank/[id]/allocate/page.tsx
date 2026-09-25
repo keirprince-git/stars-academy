@@ -4,9 +4,10 @@ import {
   addBankAllocation, addBankKitPayment, removeBankAllocation,
   ensureKitOrdersForAllPlayers, getAllKitOrders,
   getTransactionSplits, getTxnGroupRef, getBundleSummary, removeBundle,
+  getDepositAllocationHistory,
 } from "@/lib/db";
 import { getEffectiveTariff } from "@/lib/tariff";
-import { guessPlayers } from "@/lib/match-player";
+import { guessPlayers, payerHistoryMatches } from "@/lib/match-player";
 import { redirect } from "next/navigation";
 import AllocationForm from "./AllocationForm";
 import { KIT_YEAR, KIT_PRICE } from "@/lib/kit";
@@ -39,11 +40,24 @@ export default async function AllocatePage({
   const groupRef = getTxnGroupRef(txnId);
   const bundle = groupRef ? getBundleSummary(groupRef) : null;
 
-  // Guess which player(s) this transaction relates to
+  // Guess which player(s) this transaction relates to — from the narrative, and
+  // from which children the same payer has paid for before.
+  const history = txn.deposit > 0 ? getDepositAllocationHistory(txnId) : [];
   const guessedIds = txn.deposit > 0
-    ? guessPlayers(txn.description, txn.reference, players)
+    ? guessPlayers(txn.description, txn.reference, players, history)
     : [];
   const bestGuess = guessedIds.length > 0 ? guessedIds[0] : null;
+
+  // Say WHY, so the suggestion can be judged rather than trusted.
+  const activeById = new Map(players.map((p) => [p.id, p.name]));
+  const payerInfo = txn.deposit > 0 ? payerHistoryMatches(txn.description, history) : null;
+  const payerMatches = (payerInfo?.matches ?? []).filter((m) => activeById.has(m.playerId));
+  const suggestReason = payerMatches.length > 0
+    ? `★ Same payer (${payerInfo!.payer}) previously paid for ${payerMatches.map((m) => activeById.get(m.playerId)).join(", ")} — last on ${payerMatches.map((m) => m.lastDate).sort().reverse()[0]}`
+    : guessedIds.length > 0 ? "★ Suggested based on transaction description" : null;
+
+  // An amount equal to the kit price has always been a kit payment — open on Kit.
+  const defaultKind: "session" | "kit" = Math.round(remaining) === KIT_PRICE ? "kit" : "session";
 
   // Resolve the tariff (with fallback) so the package dropdown can be populated
   const effectiveTariff = getEffectiveTariff();
@@ -249,6 +263,8 @@ export default async function AllocatePage({
             remaining={remaining}
             guessedIds={guessedIds}
             bestGuess={bestGuess}
+            suggestReason={suggestReason}
+            defaultKind={defaultKind}
             kitPrice={KIT_PRICE}
             kitOrdersByPlayer={kitOrdersByPlayer}
             handleAllocate={handleAllocate}

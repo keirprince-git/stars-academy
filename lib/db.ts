@@ -773,6 +773,21 @@ export function getDashboard(opts?: {
   return rows;
 }
 
+/**
+ * Every player allocation made against an incoming bank receipt (excluding one
+ * transaction). Used to suggest the child for a new receipt from the same payer.
+ */
+export function getDepositAllocationHistory(excludeTxnId: number): { description: string; player_id: number; trans_date: string }[] {
+  return db()
+    .prepare(
+      `SELECT bt.description, ba.player_id, bt.trans_date
+       FROM bank_allocations ba
+       JOIN bank_transactions bt ON bt.id = ba.bank_transaction_id
+       WHERE bt.deposit > 0 AND ba.player_id IS NOT NULL AND bt.id <> ?`
+    )
+    .all(excludeTxnId) as { description: string; player_id: number; trans_date: string }[];
+}
+
 export interface ChaseRow {
   player_id: number;
   code: string;
