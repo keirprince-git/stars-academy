@@ -136,6 +136,50 @@ function ensureSchema(d: Database.Database) {
     }
   } catch { /* table doesn't exist yet — fine */ }
 
+  /* ── Migration: allow the 'coach' role on users ──
+     SQLite can't alter a CHECK constraint in place, so rebuild the table when
+     its definition predates 'coach'. users is referenced by sessions.user_id,
+     attendance_log.recorded_by and bank_transactions.categorised_by, so foreign
+     keys must be OFF for the drop (PRAGMA foreign_keys can't change inside a
+     transaction). Ids are preserved, so every reference stays valid. */
+  try {
+    const row = d.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).get() as { sql: string } | undefined;
+    if (row && row.sql && !row.sql.includes("'coach'")) {
+      d.pragma("foreign_keys = OFF");
+      try {
+        d.exec(`
+          BEGIN;
+          CREATE TABLE users_new (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT    NOT NULL UNIQUE,
+            password_hash TEXT    NOT NULL,
+            role          TEXT    NOT NULL DEFAULT 'recorder'
+                          CHECK (role IN ('admin','coach','recorder')),
+            created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO users_new (id, username, password_hash, role, created_at)
+            SELECT id, username, password_hash, role, created_at FROM users;
+          UPDATE sqlite_sequence
+             SET seq = MAX(seq, COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'users'), 0))
+           WHERE name = 'users_new';
+          DROP TABLE users;
+          ALTER TABLE users_new RENAME TO users;
+          COMMIT;
+        `);
+        console.log("[stars-academy] Migrated users to support the 'coach' role");
+      } catch (e) {
+        try { d.exec("ROLLBACK"); } catch { /* not in a transaction */ }
+        throw e;
+      } finally {
+        d.pragma("foreign_keys = ON");
+      }
+      const broken = d.pragma("foreign_key_check") as unknown[];
+      if (broken.length > 0) console.error("[stars-academy] foreign_key_check after users migration:", broken);
+    }
+  } catch (e) { console.error("[stars-academy] users 'coach' migration failed:", e); }
+
   /* ── Migration: add recorded_by to attendance_log (who saved the session) ── */
   try {
     const cols = d.prepare("PRAGMA table_info(attendance_log)").all() as Array<{ name: string }>;
@@ -150,7 +194,7 @@ function ensureSchema(d: Database.Database) {
       username      TEXT    NOT NULL UNIQUE,
       password_hash TEXT    NOT NULL,
       role          TEXT    NOT NULL DEFAULT 'recorder'
-                    CHECK (role IN ('admin','recorder')),
+                    CHECK (role IN ('admin','coach','recorder')),
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -682,12 +726,14 @@ export function createPlayer(data: {
   source?: string;
   play_status?: string;
   scholarship?: number;
+  parent_name?: string;
+  parent_phone?: string;
   notes?: string;
 }): number {
   const result = db()
     .prepare(
-      `INSERT INTO players (code, name, country, source, play_status, scholarship, notes)
-       VALUES (@code, @name, @country, @source, @play_status, @scholarship, @notes)`
+      `INSERT INTO players (code, name, country, source, play_status, scholarship, parent_name, parent_phone, notes)
+       VALUES (@code, @name, @country, @source, @play_status, @scholarship, @parent_name, @parent_phone, @notes)`
     )
     .run({
       code: data.code,
@@ -696,6 +742,8 @@ export function createPlayer(data: {
       source: data.source ?? null,
       play_status: data.play_status ?? "Active",
       scholarship: data.scholarship ?? 0,
+      parent_name: data.parent_name ?? null,
+      parent_phone: data.parent_phone ?? null,
       notes: data.notes ?? null,
     });
   return result.lastInsertRowid as number;
@@ -861,7 +909,7 @@ export function getSessionByToken(token: string): (Session & { role: User["role"
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token = ? AND s.expires_at > datetime('now')`
     )
-    .get(token) as (Session & { role: "admin" | "recorder"; username: string }) | undefined;
+    .get(token) as (Session & { role: User["role"]; username: string }) | undefined;
 }
 
 export function deleteSession(token: string) {
@@ -874,10 +922,10 @@ export function deleteExpiredSessions() {
 
 /* ── User management ────────────────────────────────── */
 
-export function getAllUsers(): Array<{ id: number; username: string; role: 'admin' | 'recorder'; created_at: string }> {
+export function getAllUsers(): Array<{ id: number; username: string; role: User["role"]; created_at: string }> {
   return db()
     .prepare("SELECT id, username, role, created_at FROM users ORDER BY username")
-    .all() as Array<{ id: number; username: string; role: 'admin' | 'recorder'; created_at: string }>;
+    .all() as Array<{ id: number; username: string; role: User["role"]; created_at: string }>;
 }
 
 export function getUserById(id: number): User | undefined {
@@ -888,14 +936,14 @@ export function countAdmins(): number {
   return (db().prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin'").get() as { c: number }).c;
 }
 
-export function addUser(username: string, password: string, role: 'admin' | 'recorder'): number {
+export function addUser(username: string, password: string, role: User["role"]): number {
   const result = db()
     .prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)")
     .run(username, hashPassword(password), role);
   return Number(result.lastInsertRowid);
 }
 
-export function updateUser(id: number, username: string, role: 'admin' | 'recorder') {
+export function updateUser(id: number, username: string, role: User["role"]) {
   db().prepare("UPDATE users SET username = ?, role = ? WHERE id = ?").run(username, role, id);
 }
 

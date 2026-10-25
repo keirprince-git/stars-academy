@@ -48,12 +48,16 @@ export default async function PlayerDetailPage({
     : 0;
 
   const isAdmin = auth.role === "admin";
+  const isCoach = auth.role === "coach";
   const editing = sp.edit === "1" && isAdmin;
+  // Coaches can edit just the parent's contact details (admins use the full Edit).
+  const editingContact = sp.contact === "1" && isCoach;
 
   const allPlayers = isAdmin ? getPlayers({ status: "Active", sort: "name", dir: "asc" }) : [];
 
   async function handleFreeCredit(formData: FormData) {
     "use server";
+    await requireAuth("admin");
     const playerId = Number(formData.get("player_id"));
     const sessions = parseInt(formData.get("sessions") as string, 10);
     const notes = (formData.get("notes") as string) || null;
@@ -68,6 +72,7 @@ export default async function PlayerDetailPage({
 
   async function handleTransfer(formData: FormData) {
     "use server";
+    await requireAuth("admin");
     const toPlayerId = Number(formData.get("player_id"));
     const fromPlayerId = Number(formData.get("from_player_id"));
     const sessions = parseInt(formData.get("sessions") as string, 10);
@@ -91,8 +96,21 @@ export default async function PlayerDetailPage({
     redirect(`/players/${playerId}?success=amount`);
   }
 
+  // Coach (or admin): parent contact details only — nothing else on the record.
+  async function handleSaveContact(formData: FormData) {
+    "use server";
+    await requireAuth("coach");
+    const playerId = Number(formData.get("player_id"));
+    updatePlayer(playerId, {
+      parent_name:  ((formData.get("parent_name") as string) ?? "").trim() || null,
+      parent_phone: ((formData.get("parent_phone") as string) ?? "").trim() || null,
+    });
+    redirect(`/players/${playerId}?success=contact`);
+  }
+
   async function handleSave(formData: FormData) {
     "use server";
+    await requireAuth("admin");
     const playerId = Number(formData.get("player_id"));
     updatePlayer(playerId, {
       name:         formData.get("name") as string,
@@ -116,8 +134,15 @@ export default async function PlayerDetailPage({
           {isAdmin && !editing && (
             <a href={`/players/${player.id}?edit=1`} className="btn btn-sm btn-primary">Edit</a>
           )}
+          {isCoach && !editingContact && (
+            <a href={`/players/${player.id}?contact=1`} className="btn btn-sm btn-primary">Edit contact</a>
+          )}
         </div>
       </div>
+
+      {sp.success === "contact" && (
+        <div className="alert alert-success">Contact details saved.</div>
+      )}
 
       {/* ── Session balance summary ───────────────── */}
       <div className="summary-row">
@@ -301,6 +326,24 @@ export default async function PlayerDetailPage({
             </div>
             <div className="gap-sm mt-1">
               <button type="submit" className="btn btn-primary">Save</button>
+              <a href={`/players/${player.id}`} className="btn">Cancel</a>
+            </div>
+          </form>
+        ) : editingContact ? (
+          <form action={handleSaveContact}>
+            <input type="hidden" name="player_id" value={player.id} />
+            <div className="form-row">
+              <div className="form-group">
+                <label>Parent / Guardian</label>
+                <input name="parent_name" type="text" defaultValue={player.parent_name ?? ""} placeholder="Name" autoFocus />
+              </div>
+              <div className="form-group">
+                <label>WhatsApp Number</label>
+                <input name="parent_phone" type="tel" defaultValue={player.parent_phone ?? ""} placeholder="e.g. +234..." />
+              </div>
+            </div>
+            <div className="gap-sm mt-1">
+              <button type="submit" className="btn btn-primary">Save contact</button>
               <a href={`/players/${player.id}`} className="btn">Cancel</a>
             </div>
           </form>

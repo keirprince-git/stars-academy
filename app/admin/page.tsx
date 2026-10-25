@@ -33,9 +33,9 @@ export default async function AdminPage({
     "use server";
     const username = (formData.get("username") as string ?? "").trim();
     const password = formData.get("password") as string;
-    const role = formData.get("role") as 'admin' | 'recorder';
+    const role = formData.get("role") as 'admin' | 'coach' | 'recorder';
 
-    if (!username || !password || (role !== "admin" && role !== "recorder")) {
+    if (!username || !password || (role !== "admin" && role !== "coach" && role !== "recorder")) {
       redirect("/admin?error=user_invalid");
     }
     if (password.length < 8) {
@@ -58,9 +58,9 @@ export default async function AdminPage({
     "use server";
     const id = parseInt(formData.get("id") as string, 10);
     const username = (formData.get("username") as string ?? "").trim();
-    const role = formData.get("role") as 'admin' | 'recorder';
+    const role = formData.get("role") as 'admin' | 'coach' | 'recorder';
 
-    if (!id || !username || (role !== "admin" && role !== "recorder")) {
+    if (!id || !username || (role !== "admin" && role !== "coach" && role !== "recorder")) {
       redirect("/admin?error=user_invalid");
     }
 
@@ -148,7 +148,7 @@ export default async function AdminPage({
       <div className="card" style={{ marginBottom: "1rem" }}>
         <h2 style={{ marginBottom: "0.75rem" }}>Users</h2>
         <p className="text-dim" style={{ fontSize: "0.85rem", marginBottom: "0.75rem" }}>
-          Login accounts. Admins can manage all data; Recorders can only view records and record attendance.
+          Login accounts. Admins can manage all data. Coaches can record attendance, add players and edit parents' contact details. Recorders can only view records and record attendance.
         </p>
 
         <table>
@@ -171,6 +171,7 @@ export default async function AdminPage({
                         <input name="username" defaultValue={u.username} required style={{ maxWidth: "180px" }} />
                         <select name="role" defaultValue={u.role}>
                           <option value="admin">Admin</option>
+                          <option value="coach">Coach</option>
                           <option value="recorder">Recorder</option>
                         </select>
                         <button type="submit" className="btn btn-sm btn-primary">Save</button>
@@ -204,8 +205,8 @@ export default async function AdminPage({
                     )}
                   </td>
                   <td>
-                    <span className={u.role === "admin" ? "pill pill-warning" : "pill pill-muted"}>
-                      {u.role === "admin" ? "Admin" : "Recorder"}
+                    <span className={u.role === "admin" ? "pill pill-warning" : u.role === "coach" ? "pill pill-success" : "pill pill-muted"}>
+                      {u.role === "admin" ? "Admin" : u.role === "coach" ? "Coach" : "Recorder"}
                     </span>
                   </td>
                   <td className="text-dim" style={{ fontSize: "0.85rem" }}>
@@ -242,6 +243,7 @@ export default async function AdminPage({
               <label style={{ fontSize: "0.8rem" }}>Role</label>
               <select name="role" defaultValue="recorder" required>
                 <option value="admin">Admin</option>
+                <option value="coach">Coach</option>
                 <option value="recorder">Recorder</option>
               </select>
             </div>

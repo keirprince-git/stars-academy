@@ -33,7 +33,7 @@ export default async function PlayersPage({
     <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h2>Players ({players.length})</h2>
-        {auth.role === "admin" && (
+        {(auth.role === "admin" || auth.role === "coach") && (
           <a href="/players/new" className="btn btn-primary btn-sm">Add player</a>
         )}
       </div>

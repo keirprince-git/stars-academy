@@ -53,9 +53,17 @@ export interface User {
   id: number;
   username: string;
   password_hash: string;
-  role: 'admin' | 'recorder';
+  role: Role;
   created_at: string;
 }
+
+/**
+ * Roles, lowest to highest: recorder < coach < admin.
+ * - recorder: view records, record attendance.
+ * - coach: recorder + add players + edit parents' contact details.
+ * - admin: everything.
+ */
+export type Role = 'admin' | 'coach' | 'recorder';
 
 export interface Session {
   id: number;

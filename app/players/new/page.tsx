@@ -3,19 +3,24 @@ import { createPlayer, nextPlayerCode } from "@/lib/db";
 import { redirect } from "next/navigation";
 
 export default async function NewPlayerPage() {
-  await requireAuth("admin");
+  const auth = await requireAuth("coach"); // coaches and admins can add players
+  const isAdmin = auth.role === "admin";
   const suggestedCode = nextPlayerCode();
 
   async function handleCreate(formData: FormData) {
     "use server";
+    const { role } = await requireAuth("coach");
     const id = createPlayer({
-      code:        formData.get("code") as string,
-      name:        formData.get("name") as string,
-      country:     (formData.get("country") as string) || undefined,
-      source:      (formData.get("source") as string) || undefined,
-      play_status: formData.get("play_status") as string,
-      scholarship: formData.get("scholarship") === "1" ? 1 : 0,
-      notes:       (formData.get("notes") as string) || undefined,
+      code:         formData.get("code") as string,
+      name:         formData.get("name") as string,
+      country:      (formData.get("country") as string) || undefined,
+      source:       (formData.get("source") as string) || undefined,
+      play_status:  formData.get("play_status") as string,
+      // Scholarship is a fee decision — admin only. A coach-added player is fee-paying.
+      scholarship:  role === "admin" && formData.get("scholarship") === "1" ? 1 : 0,
+      parent_name:  ((formData.get("parent_name") as string) ?? "").trim() || undefined,
+      parent_phone: ((formData.get("parent_phone") as string) ?? "").trim() || undefined,
+      notes:        (formData.get("notes") as string) || undefined,
     });
     redirect(`/players/${id}`);
   }
@@ -58,12 +63,24 @@ export default async function NewPlayerPage() {
                 <option value="Left">Left</option>
               </select>
             </div>
+            {isAdmin && (
+              <div className="form-group">
+                <label>Scholarship</label>
+                <select name="scholarship" defaultValue="0">
+                  <option value="0">No</option>
+                  <option value="1">Yes</option>
+                </select>
+              </div>
+            )}
+          </div>
+          <div className="form-row">
             <div className="form-group">
-              <label>Scholarship</label>
-              <select name="scholarship" defaultValue="0">
-                <option value="0">No</option>
-                <option value="1">Yes</option>
-              </select>
+              <label>Parent / Guardian</label>
+              <input name="parent_name" type="text" placeholder="Name" />
+            </div>
+            <div className="form-group">
+              <label>WhatsApp Number</label>
+              <input name="parent_phone" type="tel" placeholder="e.g. +234..." />
             </div>
           </div>
           <div className="form-row full">

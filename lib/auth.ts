@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import crypto from "crypto";
 import { getUserByUsername, createSession, getSessionByToken, deleteSession } from "./db";
+import type { Role } from "./types";
 
 const COOKIE_NAME = "stars_session";
 const SESSION_DAYS = 7;
@@ -45,7 +46,18 @@ export async function logout() {
   }
 }
 
-export async function requireAuth(requiredRole?: "admin" | "recorder") {
+const ROLE_RANK: Record<Role, number> = { recorder: 0, coach: 1, admin: 2 };
+
+/** True if `role` is at least `min` (recorder < coach < admin). */
+export function hasRole(role: Role, min: Role): boolean {
+  return (ROLE_RANK[role] ?? -1) >= ROLE_RANK[min];
+}
+
+/**
+ * Require a signed-in user; if `requiredRole` is given, the user must be at
+ * least that role (e.g. "coach" admits coaches and admins).
+ */
+export async function requireAuth(requiredRole?: Role) {
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
   if (!token) redirect("/login");
@@ -57,7 +69,7 @@ export async function requireAuth(requiredRole?: "admin" | "recorder") {
     redirect("/login");
   }
 
-  if (requiredRole === "admin" && session.role !== "admin") {
+  if (requiredRole && !hasRole(session.role, requiredRole)) {
     redirect("/dashboard?error=forbidden");
   }
 
