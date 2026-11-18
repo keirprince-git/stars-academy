@@ -48,7 +48,8 @@ export default async function DashboardPage({
   const auth = await requireAuth();
   const sp = await searchParams;
 
-  const status    = sp.status    ?? "all";
+  // Default to active players; Play Status = All (or Inactive/Left) shows the rest.
+  const status    = sp.status    ?? "Active";
   const payStatus = sp.payStatus ?? "all";
   const search    = sp.search    ?? "";
   const sort      = sp.sort      ?? "code";
@@ -64,7 +65,7 @@ export default async function DashboardPage({
 
   // Build current params for sort links
   const currentParams = new URLSearchParams();
-  if (status !== "all")    currentParams.set("status", status);
+  if (status !== "Active") currentParams.set("status", status); // keep "all" etc. across sorts
   if (payStatus !== "all") currentParams.set("payStatus", payStatus);
   if (search)              currentParams.set("search", search);
 
@@ -84,7 +85,7 @@ export default async function DashboardPage({
 
       {/* ── Summary chips ──────────────────────────── */}
       <div className="summary-row">
-        <a href="/dashboard" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
+        <a href="/dashboard?status=all" className="chip" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="chip-value">{summary.total}</span>
           <span className="chip-label">Players</span>
         </a>

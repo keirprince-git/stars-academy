@@ -878,13 +878,20 @@ export function getPlayersNeedingChase(opts?: { attendedOn?: string }): ChaseRow
 
 /* ── Summary stats ──────────────────────────────────── */
 
+/**
+ * Dashboard chip counts. `total` is every player on the books; the rest count
+ * ACTIVE players only, matching the lists the chips link to (the dashboard
+ * defaults to active players). Former players who left owing sessions are
+ * visible via Play Status = All + Pay Status = Overdue.
+ */
 export function getDashboardSummary() {
   const rows = getDashboard();
+  const activeRows = rows.filter((r) => r.play_status === "Active");
   const total = rows.length;
-  const active = rows.filter((r) => r.play_status === "Active").length;
-  const overdue = rows.filter((r) => r.pay_status === "OVERDUE").length;
-  const scholarship = rows.filter((r) => r.scholarship === 1).length;
-  const credit = rows.filter((r) => r.pay_status === "Credit").length;
+  const active = activeRows.length;
+  const overdue = activeRows.filter((r) => r.pay_status === "OVERDUE").length;
+  const scholarship = activeRows.filter((r) => r.scholarship === 1).length;
+  const credit = activeRows.filter((r) => r.pay_status === "Credit").length;
   return { total, active, overdue, scholarship, credit };
 }
 

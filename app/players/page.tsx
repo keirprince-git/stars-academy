@@ -9,7 +9,8 @@ export default async function PlayersPage({
   const auth = await requireAuth();
   const sp = await searchParams;
 
-  const status      = sp.status      ?? "all";
+  // Default to active players; Status = All (or Inactive/Left) shows the rest.
+  const status      = sp.status      ?? "Active";
   const scholarship = sp.scholarship ?? "all";
   const search      = sp.search      ?? "";
   const sort        = sp.sort        ?? "code";
@@ -20,7 +21,7 @@ export default async function PlayersPage({
   function sortLink(field: string, label: string) {
     const nextDir = sort === field && dir === "asc" ? "desc" : "asc";
     const p = new URLSearchParams();
-    if (status !== "all")      p.set("status", status);
+    if (status !== "Active")   p.set("status", status); // keep "all" etc. across sorts
     if (scholarship !== "all") p.set("scholarship", scholarship);
     if (search)                p.set("search", search);
     p.set("sort", field);
